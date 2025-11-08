@@ -6,6 +6,7 @@
     <title>Analizador Energético Avanzado</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
 
@@ -233,6 +234,37 @@
             font-weight: bold;
             margin: 10px 0;
         }
+
+        .narrative-container {
+            background: #fff;
+            padding: 30px;
+            border-radius: 15px;
+            font-family: 'Georgia', serif;
+            line-height: 1.8;
+            font-size: 1.1em;
+            color: #333;
+        }
+
+        .narrative-container h3 {
+            font-size: 1.5em;
+            color: #667eea;
+            margin-bottom: 20px;
+        }
+
+        .narrative-container p {
+            margin-bottom: 15px;
+        }
+
+        .narrative-container .highlight {
+            font-weight: bold;
+            color: #764ba2;
+        }
+
+        #three-container {
+            width: 100%;
+            height: 600px;
+            background-color: #000;
+        }
     </style>
 </head>
 <body>
@@ -304,6 +336,9 @@
                 <div class="tab" onclick="switchTab('comparativas')">📊 Comparativas</div>
                 <div class="tab" onclick="switchTab('predicciones')">🔮 Predicciones</div>
                 <div class="tab" onclick="switchTab('causal')">🔗 Análisis Causal</div>
+                <div class="tab" onclick="switchTab('narrativa')">📜 Modo Narrado</div>
+                <div class="tab" onclick="switchTab('comparador')">🆚 Comparador de Períodos</div>
+                <div class="tab" onclick="switchTab('3d')">🌌 Vista 3D</div>
             </div>
 
             <div id="tab-resumen" class="tab-content active">
@@ -393,6 +428,41 @@
                     <canvas id="causalChart"></canvas>
                 </div>
                 <div class="metrics-grid" id="causalMetrics"></div>
+            </div>
+
+            <div id="tab-narrativa" class="tab-content">
+                <div class="narrative-container" id="narrativeContent">
+                    <!-- El contenido narrado se generará aquí -->
+                </div>
+            </div>
+
+            <div id="tab-comparador" class="tab-content">
+                <div class="config-section">
+                    <div class="config-item">
+                        <label for="periodoA-inicio">Período A - Inicio</label>
+                        <input type="date" id="periodoA-inicio">
+                    </div>
+                    <div class="config-item">
+                        <label for="periodoA-fin">Período A - Fin</label>
+                        <input type="date" id="periodoA-fin">
+                    </div>
+                    <div class="config-item">
+                        <label for="periodoB-inicio">Período B - Inicio</label>
+                        <input type="date" id="periodoB-inicio">
+                    </div>
+                    <div class="config-item">
+                        <label for="periodoB-fin">Período B - Fin</label>
+                        <input type="date" id="periodoB-fin">
+                    </div>
+                </div>
+                <button onclick="compararPeriodos()" style="margin-top: 20px; padding: 10px 20px; background: #667eea; color: white; border: none; border-radius: 8px; cursor: pointer;">
+                    Comparar Períodos
+                </button>
+                <div id="comparisonResult" class="chart-grid" style="margin-top: 20px;"></div>
+            </div>
+
+            <div id="tab-3d" class="tab-content">
+                <div id="three-container"></div>
             </div>
         </div>
     </div>
@@ -626,6 +696,8 @@
             renderRecommendations();
             renderCausalAnalysis();
             document.getElementById('insightsList').innerHTML += generarDiagnosticoNLP();
+            generarNarrativa();
+            renderizarVista3D();
         }
 
         function renderMetricsGrid() {
@@ -1556,6 +1628,133 @@ function generarReporteEjecutivo() {
     a.href = url;
     a.download = `reporte_energia_${new Date().toISOString().slice(0,10)}.json`;
     a.click();
+}
+
+function generarNarrativa() {
+    const d = analyzedData;
+    const narrativeEl = document.getElementById('narrativeContent');
+
+    const diaInicio = d.datosLimpios[0].time.toLocaleDateString('es-ES', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+    const diaFin = d.datosLimpios[d.datosLimpios.length - 1].time.toLocaleDateString('es-ES', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+
+    let html = `<h3>La Historia de tu Consumo: del ${diaInicio} al ${diaFin}</h3>`;
+
+    html += `<p>Nuestra historia comienza con un consumo promedio de <span class="highlight">${d.consumoPromedio.toFixed(0)} watts</span>.
+    Imagina esto como el pulso constante de tu hogar, el ritmo de su corazón energético.</p>`;
+
+    if (d.picos && d.picos.length > 0) {
+        const picoMaximo = d.picos.reduce((max, p) => p.diff > max.diff ? p : max, d.picos[0]);
+        html += `<p>El momento más dramático de nuestra saga fue el <span class="highlight">${picoMaximo.time.toLocaleString('es-ES')}</span>,
+        cuando un evento de <span class="highlight">${picoMaximo.diff.toFixed(0)}W</span>, probablemente un <span class="highlight">${picoMaximo.clasificacion.tipo}</span>,
+        despertó con fuerza. Estos son los héroes y villanos de tu consumo, los que definen los picos de la trama.</p>`;
+    }
+
+    if (d.consumoBase > 100) {
+        html += `<p>Pero toda historia tiene sus secretos. En las tranquilas horas de la noche, un murmullo constante de
+        <span class="highlight">${d.consumoBase.toFixed(0)}W</span> persiste. Es el 'consumo fantasma', un personaje misterioso que te cuesta
+        <span class="highlight">$${d.costoFantasmaMes.toFixed(2)}</span> al mes. ¿Quién será? ¿Cargadores olvidados, aparatos en stand-by?</p>`;
+    }
+
+    const diaMasActivo = d.diasSemana[d.promedioPorDia.indexOf(Math.max(...d.promedioPorDia))];
+    const diaMenosActivo = d.diasSemana[d.promedioPorDia.indexOf(Math.min(...d.promedioPorDia))];
+    html += `<p>La vida de tu hogar tiene un ritmo semanal. Los <span class="highlight">${diaMasActivo}</span> son días de gran actividad,
+    mientras que los <span class="highlight">${diaMenosActivo}</span> la energía descansa. Es el reflejo de tus hábitos y rutinas.</p>`;
+
+    if (d.factorPotenciaPromedio < 0.9) {
+        html += `<p>Notamos también que algunos de tus aparatos no son del todo eficientes. Con un factor de potencia de
+        <span class="highlight">${d.factorPotenciaPromedio.toFixed(2)}</span>, hay una parte de la energía que se desperdicia,
+        como un eco que no llega a su destino. Mejorar esto es como afinar los instrumentos de tu orquesta energética.</p>`;
+    }
+
+    html += `<p>En resumen, tu hogar es un ecosistema vivo, con sus momentos de calma y sus picos de actividad.
+    Entender esta narrativa te da el poder de reescribir el guion, de tomar el control y dirigir tu consumo hacia un futuro más eficiente y económico.
+    Cada pequeño cambio es un nuevo capítulo en tu viaje hacia la maestría energética.</p>`;
+
+    narrativeEl.innerHTML = html;
+}
+
+function compararPeriodos() {
+    const inicioA = new Date(document.getElementById('periodoA-inicio').value);
+    const finA = new Date(document.getElementById('periodoA-fin').value);
+    const inicioB = new Date(document.getElementById('periodoB-inicio').value);
+    const finB = new Date(document.getElementById('periodoB-fin').value);
+
+    if (isNaN(inicioA) || isNaN(finA) || isNaN(inicioB) || isNaN(finB)) {
+        alert("Por favor, selecciona fechas válidas para ambos períodos.");
+        return;
+    }
+
+    const datosPeriodoA = analyzedData.datosLimpios.filter(d => d.time >= inicioA && d.time <= finA);
+    const datosPeriodoB = analyzedData.datosLimpios.filter(d => d.time >= inicioB && d.time <= finB);
+
+    if (datosPeriodoA.length === 0 || datosPeriodoB.length === 0) {
+        alert("No se encontraron datos para uno o ambos períodos seleccionados.");
+        return;
+    }
+
+    const analizarPeriodo = (datos) => {
+        const potencias = datos.map(d => d.power);
+        const consumoPromedio = potencias.reduce((a, b) => a + b, 0) / potencias.length;
+        const consumoMaximo = Math.max(...potencias);
+        const consumoMinimo = Math.min(...potencias);
+        const kwhTotal = (consumoPromedio * (datos[datos.length - 1].time - datos[0].time) / (1000 * 60 * 60)) / 1000;
+        return { consumoPromedio, consumoMaximo, consumoMinimo, kwhTotal };
+    };
+
+    const metricasA = analizarPeriodo(datosPeriodoA);
+    const metricasB = analizarPeriodo(datosPeriodoB);
+
+    const resultadoHTML = `
+        <div class="metric-card">
+            <h3>Período A</h3>
+            <p><strong>Consumo Promedio:</strong> ${metricasA.consumoPromedio.toFixed(0)} W</p>
+            <p><strong>Consumo Máximo:</strong> ${metricasA.consumoMaximo.toFixed(0)} W</p>
+            <p><strong>Consumo Mínimo:</strong> ${metricasA.consumoMinimo.toFixed(0)} W</p>
+            <p><strong>Consumo Total:</strong> ${metricasA.kwhTotal.toFixed(2)} kWh</p>
+        </div>
+        <div class="metric-card">
+            <h3>Período B</h3>
+            <p><strong>Consumo Promedio:</strong> ${metricasB.consumoPromedio.toFixed(0)} W</p>
+            <p><strong>Consumo Máximo:</strong> ${metricasB.consumoMaximo.toFixed(0)} W</p>
+            <p><strong>Consumo Mínimo:</strong> ${metricasB.consumoMinimo.toFixed(0)} W</p>
+            <p><strong>Consumo Total:</strong> ${metricasB.kwhTotal.toFixed(2)} kWh</p>
+        </div>
+    `;
+
+    document.getElementById('comparisonResult').innerHTML = resultadoHTML;
+}
+
+function renderizarVista3D() {
+    const container = document.getElementById('three-container');
+    if (!container) return;
+
+    // Limpiar contenido previo
+    while (container.firstChild) {
+        container.removeChild(container.firstChild);
+    }
+
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(75, container.clientWidth / container.clientHeight, 0.1, 1000);
+    const renderer = new THREE.WebGLRenderer();
+    renderer.setSize(container.clientWidth, container.clientHeight);
+    container.appendChild(renderer.domElement);
+
+    const data = analyzedData.datosLimpios;
+    const points = data.map((d, i) => new THREE.Vector3(i / data.length * 100, d.power / 1000, 0));
+    const geometry = new THREE.BufferGeometry().setFromPoints(points);
+    const material = new THREE.LineBasicMaterial({ color: 0x00ff00 });
+    const line = new THREE.Line(geometry, material);
+    scene.add(line);
+
+    camera.position.z = 50;
+
+    function animate() {
+        requestAnimationFrame(animate);
+        line.rotation.x += 0.01;
+        line.rotation.y += 0.01;
+        renderer.render(scene, camera);
+    }
+    animate();
 }
     </script>
 </body>
