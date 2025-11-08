@@ -392,10 +392,26 @@
                 <div class="tab" onclick="switchTab('chatbot')">🤖 Chatbot IA</div>
                 <div class="tab" onclick="switchTab('seriesTemporales')">🕰️ Series Temporales</div>
                 <div class="tab" onclick="switchTab('alertasAparatos')">🔔 Alertas y Aparatos</div>
+                <div class="tab" onclick="switchTab('logros')">🏆 Logros</div>
             </div>
 
             <div id="tab-resumen" class="tab-content active">
                 <div class="metrics-grid" id="metricsGrid"></div>
+                <div class="chart-container">
+                    <h3>🎯 Mis Metas de Ahorro</h3>
+                    <div id="goalSection" class="config-section" style="grid-template-columns: 1fr 1fr 1fr auto; gap: 15px; align-items: flex-end;">
+                        <div class="config-item">
+                            <label for="goalPercentage">Quiero reducir un...</label>
+                            <input type="number" id="goalPercentage" value="15" min="1" max="50" style="width: 80px;"/> %
+                        </div>
+                        <div class="config-item">
+                            <label for="goalMonths">...en los próximos...</label>
+                            <input type="number" id="goalMonths" value="2" min="1" max="12"/> meses
+                        </div>
+                        <button onclick="setGoal()" style="padding: 10px 20px; background: #2ecc71; color: white; border: none; border-radius: 8px; cursor: pointer; height: 45px;">Establecer Meta</button>
+                    </div>
+                    <div id="goalProgress" style="margin-top: 20px;"></div>
+                </div>
                 <div class="chart-container">
                     <h3>📈 Línea de tiempo completa con eventos detectados</h3>
                     <canvas id="mainChart"></canvas>
@@ -456,6 +472,11 @@
                 <div class="chart-container">
                     <h3>📈 Tu hogar vs. Promedio nacional</h3>
                     <canvas id="benchmarkChart"></canvas>
+                </div>
+                <div class="chart-container">
+                    <h3>🏡 Comparativa con Vecinos (Simulado)</h3>
+                    <p>Compara tu consumo diario con un hogar similar en tu zona. Esto es una simulación para fines demostrativos.</p>
+                    <canvas id="neighborComparisonChart"></canvas>
                 </div>
             </div>
 
@@ -561,6 +582,13 @@
                 <div class="insights-section">
                     <p><strong>Autocorrelación:</strong> Muestra cómo el consumo de un momento se parece al de momentos pasados. Picos altos sugieren patrones repetitivos (ej. un pico cada 24 horas indica un ciclo diario).</p>
                     <p><strong>Análisis de Frecuencias:</strong> Descompone la señal de consumo en sus ciclos fundamentales. Un pico en el gráfico revela una frecuencia dominante (ej. un ciclo que se repite cada 8 horas).</p>
+                </div>
+            </div>
+
+            <div id="tab-logros" class="tab-content">
+                <div class="insights-section">
+                    <h3>🏆 Mis Logros Desbloqueados</h3>
+                    <div id="logrosContainer" class="metrics-grid" style="grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));"></div>
                 </div>
             </div>
 
@@ -689,6 +717,9 @@
             }
             if (tabName === 'alertasAparatos') {
                 renderizarAlertasYAparatos();
+            }
+            if (tabName === 'logros') {
+                renderizarLogros();
             }
         }
 
@@ -995,6 +1026,48 @@
             });
         }
 
+        function renderNeighborComparison() {
+            const d = analyzedData;
+            const ctx = document.getElementById('neighborComparisonChart').getContext('2d');
+            if (chartInstances.neighbor) chartInstances.neighbor.destroy();
+
+            // Simulate neighbor's data
+            const neighborData = d.promedioPorHora.map(consumo => {
+                const factor = 0.8 + Math.random() * 0.4; // between 0.8 and 1.2
+                return consumo * factor;
+            });
+
+            chartInstances.neighbor = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: Array.from({length: 24}, (_, i) => i + ':00'),
+                    datasets: [
+                        {
+                            label: 'Tu Consumo Promedio',
+                            data: d.promedioPorHora,
+                            borderColor: '#667eea',
+                            backgroundColor: 'rgba(102, 126, 234, 0.1)',
+                            fill: true,
+                            tension: 0.4
+                        },
+                        {
+                            label: 'Consumo del Vecino (Simulado)',
+                            data: neighborData,
+                            borderColor: '#e74c3c',
+                            backgroundColor: 'rgba(231, 76, 60, 0.1)',
+                            fill: true,
+                            tension: 0.4
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    plugins: { legend: { display: true } },
+                    scales: { y: { beginAtZero: true, title: { display: true, text: 'Consumo Promedio (W)' } } }
+                }
+            });
+        }
+
         function calcularTendencia(datos) {
             const n = Math.min(datos.length, 1000);
             let sumX = 0, sumY = 0, sumXY = 0, sumX2 = 0;
@@ -1024,6 +1097,7 @@
             renderAppliancesList();
             renderComparatives();
             renderBenchmarkChart();
+            renderNeighborComparison();
             renderizarComparadorSemanal();
             renderPredictionsMetrics();
             renderPredictionChart();
@@ -1035,7 +1109,58 @@
             renderizarAdvancedAnalytics();
 
             document.getElementById('insightsList').innerHTML += generarDiagnosticoNLP();
+            renderGoalProgress();
         }
+
+        function setGoal() {
+            const percentage = document.getElementById('goalPercentage').value;
+            const months = document.getElementById('goalMonths').value;
+            if (percentage && months) {
+                const goal = {
+                    percentage: parseFloat(percentage),
+                    months: parseInt(months),
+                    startDate: new Date().toISOString(),
+                    initialConsumption: analyzedData.tuConsumoMensual
+                };
+                localStorage.setItem('userGoal', JSON.stringify(goal));
+                renderGoalProgress();
+            }
+        }
+
+        function renderGoalProgress() {
+            const goal = JSON.parse(localStorage.getItem('userGoal'));
+            const progressContainer = document.getElementById('goalProgress');
+
+            if (!goal) {
+                progressContainer.innerHTML = '<p>No has establecido una meta de ahorro. ¡Define una para empezar a medir tu progreso!</p>';
+                return;
+            }
+
+            const targetConsumption = goal.initialConsumption * (1 - goal.percentage / 100);
+            const currentConsumption = analyzedData.tuConsumoMensual;
+            const progress = ((goal.initialConsumption - currentConsumption) / (goal.initialConsumption - targetConsumption)) * 100;
+
+            const startDate = new Date(goal.startDate);
+            const endDate = new Date(startDate);
+            endDate.setMonth(startDate.getMonth() + goal.months);
+            const daysRemaining = Math.max(0, Math.round((endDate - new Date()) / (1000 * 60 * 60 * 24)));
+
+            progressContainer.innerHTML = `
+                <div class="insight-item" style="border-left-color: #2ecc71;">
+                    <div class="insight-title">Meta Actual: Reducir ${goal.percentage}% en ${goal.months} meses</div>
+                    <p><strong>Consumo Inicial:</strong> ${goal.initialConsumption.toFixed(0)} kWh/mes</p>
+                    <p><strong>Consumo Objetivo:</strong> ${targetConsumption.toFixed(0)} kWh/mes</p>
+                    <p><strong>Consumo Actual:</strong> ${currentConsumption.toFixed(0)} kWh/mes</p>
+                    <div style="background: #eee; border-radius: 10px; padding: 2px; margin-top: 10px;">
+                        <div style="width: ${Math.min(100, Math.max(0, progress)).toFixed(1)}%; background: linear-gradient(90deg, #2ecc71, #27ae60); color: white; text-align: center; padding: 5px; border-radius: 8px;">
+                            ${progress.toFixed(1)}%
+                        </div>
+                    </div>
+                    <p style="margin-top: 10px;"><strong>Tiempo restante:</strong> ${daysRemaining} días</p>
+                </div>
+            `;
+        }
+
 
         function renderMetricsGrid() {
             const d = analyzedData;
@@ -2825,6 +2950,80 @@ function exportarAExcel() {
 
     container.innerHTML = alertasHTML;
 }
+
+    function renderizarLogros() {
+        const d = analyzedData;
+        const logros = [
+            {
+                id: 'vampire_slayer',
+                titulo: '🧛‍♂️ Caza Vampiros',
+                descripcion: 'Mantuviste tu consumo fantasma por debajo de 75W durante al menos 3 días.',
+                condicion: () => d.consumoBase < 75 && d.diasDatos >= 3
+            },
+            {
+                id: 'efficiency_expert',
+                titulo: '👨‍🔬 Experto en Eficiencia',
+                descripcion: 'Lograste un factor de potencia promedio superior a 0.95.',
+                condicion: () => d.factorPotenciaPromedio > 0.95
+            },
+            {
+                id: 'peak_controller',
+                titulo: '📉 Controlador de Picos',
+                descripcion: 'No tuviste más de 5 picos de alto consumo en una semana.',
+                condicion: () => (d.categorias['Alto consumo'] || 0) <= (5 * (d.diasDatos / 7))
+            },
+            {
+                id: 'eco_warrior',
+                titulo: '🌳 Guerrero Ecológico',
+                descripcion: 'Tu consumo mensual está por debajo del promedio nacional.',
+                condicion: () => d.comparativoNacional < 0
+            },
+            {
+                id: 'stable_consumer',
+                titulo: '🧘 Consumo Zen',
+                descripcion: 'Tu desviación estándar de consumo es menor al 30% de tu promedio.',
+                condicion: () => (d.desviacionEstandar / d.consumoPromedio) < 0.3
+            },
+            {
+                id: 'night_owl',
+                titulo: '🦉 Búho Nocturno',
+                descripcion: 'Tu mayor consumo promedio ocurre entre las 10 PM y las 6 AM.',
+                condicion: () => {
+                    const horaPico = d.promedioPorHora.indexOf(Math.max(...d.promedioPorHora));
+                    return horaPico >= 22 || horaPico <= 6;
+                }
+            }
+        ];
+
+        let unlockedAchievements = JSON.parse(localStorage.getItem('unlocked_achievements')) || [];
+
+        logros.forEach(logro => {
+            if (logro.condicion() && !unlockedAchievements.includes(logro.id)) {
+                unlockedAchievements.push(logro.id);
+            }
+        });
+
+        localStorage.setItem('unlocked_achievements', JSON.stringify(unlockedAchievements));
+
+        const container = document.getElementById('logrosContainer');
+        container.innerHTML = ''; // Limpiar
+
+        if (unlockedAchievements.length === 0) {
+            container.innerHTML = '<p>Aún no has desbloqueado ningún logro. ¡Sigue optimizando tu consumo!</p>';
+            return;
+        }
+
+        unlockedAchievements.forEach(id => {
+            const logro = logros.find(l => l.id === id);
+            container.innerHTML += `
+                <div class="metric-card" style="text-align: center; background: #f0f8ff;">
+                    <div class="metric-icon" style="font-size: 3.5em;">${logro.titulo.split(' ')[0]}</div>
+                    <div class="metric-label" style="font-size: 1.2em; font-weight: bold; color: #333; margin-top: 10px;">${logro.titulo.split(' ').slice(1).join(' ')}</div>
+                    <div class="metric-detail" style="font-size: 0.9em; margin-top: 5px;">${logro.descripcion}</div>
+                </div>
+            `;
+        });
+    }
 
     function calcularACF(series, maxLag) {
         const n = series.length;
