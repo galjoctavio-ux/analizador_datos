@@ -332,8 +332,6 @@
                 <div class="tab" onclick="switchTab('causal')">🔗 Análisis Causal</div>
                 <div class="tab" onclick="switchTab('ocupacion')">🏠 Ocupación</div>
                 <div class="tab" onclick="switchTab('impacto')">🌍 Impacto Ambiental</div>
-                <div class="tab" onclick="switchTab('vista3d')">🌌 Vista 3D</div>
-                <div class="tab" onclick="switchTab('narrativa')">📜 Narrativa</div>
 
             </div>
 
@@ -459,19 +457,6 @@
                 </div>
             </div>
 
-            <div id="tab-vista3d" class="tab-content">
-                <div class="chart-container">
-                    <h3>Visualización 3D del Consumo</h3>
-                    <div id="threejs-container" style="width: 100%; height: 600px; border-radius: 15px; overflow: hidden;"></div>
-                </div>
-            </div>
-
-            <div id="tab-narrativa" class="tab-content">
-                <div class="insights-section">
-                    <h3>📜 La Historia de Tu Consumo</h3>
-                    <div id="narrativa-container" style="line-height: 1.8; font-size: 1.1em; padding: 20px;"></div>
-                </div>
-            </div>
 
                 </div>
             </div>
@@ -838,7 +823,7 @@
             renderOccupancyMetrics();
             renderOccupancyChart();
             renderEnvironmentalImpact();
-            generarNarrativa();
+
             document.getElementById('insightsList').innerHTML += generarDiagnosticoNLP();
         }
 
@@ -1797,6 +1782,7 @@ function simularOptimizacion() {
 }
 // Generador de reportes PDF (simulado)
 function renderOccupancyMetrics() {
+
     const d = analyzedData;
     const totalHours = d.occupancy.length;
     const occupiedHours = d.occupancy.filter(o => o.occupied).length;
