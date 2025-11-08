@@ -320,7 +320,7 @@
                 <div class="tab" onclick="switchTab('comparativas')">📊 Comparativas</div>
                 <div class="tab" onclick="switchTab('predicciones')">🔮 Predicciones</div>
                 <div class="tab" onclick="switchTab('causal')">🔗 Análisis Causal</div>
-                <div class="tab" onclick="switchTab('ocupacion')">🏠 Ocupación</div>
+
             </div>
 
             <div id="tab-resumen" class="tab-content active">
@@ -411,11 +411,7 @@
                 </div>
                 <div class="metrics-grid" id="causalMetrics"></div>
             </div>
-            <div id="tab-ocupacion" class="tab-content">
-                <div class="metrics-grid" id="occupancyMetrics"></div>
-                <div class="chart-container">
-                    <h3>📈 Ocupación estimada vs. Consumo</h3>
-                    <canvas id="occupancyChart"></canvas>
+
                 </div>
             </div>
         </div>
@@ -721,6 +717,10 @@
             analyzedData.occupancy = estimateOccupancy(datosLimpios);
 
             renderizarDashboard();
+            const anomalias = detectarAnomalias(analyzedData.datosLimpios);
+            const predicciones = predecirConsumo(analyzedData.datosLimpios);
+            const clusters = clusterizarElectrodomesticos(analyzedData.picos);
+            renderizarAnalisisPredictivo(anomalias, predicciones, clusters);
         }
 
         function calcularTendencia(datos) {
@@ -1563,63 +1563,7 @@ function calculateCorrelation(arr1, arr2) {
     return num / den;
 }
 // Implementación del análisis causal
-        function renderOccupancyMetrics() {
-            const d = analyzedData;
-            if (d.datosLimpios.length < 2) return;
-            const intervalMinutes = (d.datosLimpios[1].time - d.datosLimpios[0].time) / (1000 * 60);
-            const occupiedHours = d.occupancy.filter(o => o.occupied).length * intervalMinutes / 60;
-            const totalHours = d.datosLimpios.length * intervalMinutes / 60;
-            const occupancyPercentage = (occupiedHours / totalHours) * 100;
 
-            document.getElementById('occupancyMetrics').innerHTML = `
-                <div class="metric-card">
-                    <div class="metric-icon">🏠</div>
-                    <div class="metric-label">Horas de Ocupación Estimadas</div>
-                    <div class="metric-value">${occupiedHours.toFixed(1)} h</div>
-                    <div class="metric-detail">
-                        ${occupancyPercentage.toFixed(1)}% del tiempo
-                    </div>
-                </div>
-            `;
-        }
-
-        function renderOccupancyChart() {
-            const d = analyzedData;
-            const ctx = document.getElementById('occupancyChart').getContext('2d');
-            if (chartInstances.occupancy) chartInstances.occupancy.destroy();
-
-            const labels = d.datosLimpios.map(d => d.time.toLocaleString('es-MX', { month: 'short', day: 'numeric', hour: '2-digit' }));
-            const powerData = d.datosLimpios.map(d => d.power);
-            const occupancyData = d.occupancy.map(o => o.occupied * Math.max(...powerData)); // Scale occupancy to power max for visualization
-
-            chartInstances.occupancy = new Chart(ctx, {
-                type: 'line',
-                data: {
-                    labels: labels,
-                    datasets: [{
-                        label: 'Consumo (W)',
-                        data: powerData,
-                        borderColor: '#667eea',
-                        yAxisID: 'y',
-                    }, {
-                        label: 'Ocupación',
-                        data: occupancyData,
-                        backgroundColor: 'rgba(255, 159, 64, 0.2)',
-                        borderColor: 'rgba(255, 159, 64, 1)',
-                        fill: true,
-                        stepped: true,
-                        yAxisID: 'y1',
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    scales: {
-                        y: { type: 'linear', position: 'left', title: { display: true, text: 'Watts' } },
-                        y1: { type: 'linear', position: 'right', display: false }
-                    }
-                }
-            });
-        }
 
 function renderCausalAnalysis() {
     const d = analyzedData;
@@ -1798,6 +1742,125 @@ function generarReporteEjecutivo() {
     a.download = `reporte_energia_${new Date().toISOString().slice(0,10)}.json`;
     a.click();
 }
+
+    function renderizarAnalisisPredictivo(anomalias, predicciones, clusters) {
+        const container = document.getElementById('predictiveAnalysis');
+        let html = '<h4>Detección de Anomalías (Z-score & IQR)</h4>';
+        if (anomalias.length > 0) {
+            html += '<p>Se detectaron los siguientes consumos anómalos:</p>';
+            html += '<ul class="insights-list">';
+            anomalias.forEach(a => {
+                html += `<li class="insight-item">
+                    <strong>Fecha:</strong> ${a.time.toLocaleString()} <br>
+                    <strong>Consumo:</strong> ${a.power.toFixed(2)} W
+                </li>`;
+            });
+            html += '</ul>';
+        } else {
+            html += '<p>No se detectaron anomalías significativas en el consumo.</p>';
+        }
+
+        html += '<h4>Forecasting con Modelos ARIMA (Simulado)</h4>';
+        html += '<p>Predicción de consumo para los próximos 30 días:</p>';
+        html += '<canvas id="predictionChartAdvanced"></canvas>';
+
+        html += '<h4>Clustering de Electrodomésticos (K-means)</h4>';
+        if (clusters.length > 0) {
+            html += '<p>Se han identificado los siguientes grupos de consumo:</p>';
+            clusters.forEach((cluster, i) => {
+                const consumoPromedio = cluster.reduce((sum, p) => sum + p.diff, 0) / cluster.length;
+                html += `<div class="insight-item">
+                    <strong>Cluster ${i + 1}:</strong> ${cluster.length} eventos <br>
+                    <strong>Consumo Promedio:</strong> ${consumoPromedio.toFixed(2)} W
+                </div>`;
+            });
+        } else {
+            html += '<p>No hay suficientes datos para realizar el clustering.</p>';
+        }
+
+        container.innerHTML = html;
+
+        const ctx = document.getElementById('predictionChartAdvanced').getContext('2d');
+        new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: Array.from({length: 30}, (_, i) => `Día ${i + 1}`),
+                datasets: [{
+                    label: 'Consumo Predicho (W)',
+                    data: predicciones,
+                    borderColor: '#667eea',
+                    backgroundColor: 'rgba(102, 126, 234, 0.1)',
+                    fill: true,
+                }]
+            },
+            options: {
+                responsive: true,
+                scales: {
+                    y: { beginAtZero: false }
+                }
+            }
+        });
+    }
+
+    function predecirConsumo(datos) {
+        // Seasonal Decomposition
+        const seasonalPeriod = 24 * 60; // Assuming data is per minute
+        const seasonalAverages = Array.from({ length: seasonalPeriod }, (_, i) => {
+            const seasonalData = datos.filter((_, j) => j % seasonalPeriod === i);
+            return seasonalData.reduce((sum, d) => sum + d.power, 0) / seasonalData.length;
+        });
+
+        const deseasonalized = datos.map((d, i) => d.power - seasonalAverages[i % seasonalPeriod]);
+
+        // Linear regression on deseasonalized data
+        const n = deseasonalized.length;
+        let sumX = 0, sumY = 0, sumXY = 0, sumX2 = 0;
+        deseasonalized.forEach((y, i) => {
+            sumX += i;
+            sumY += y;
+            sumXY += i * y;
+            sumX2 += i * i;
+        });
+
+        const pendiente = (n * sumXY - sumX * sumY) / (n * sumX2 - sumX * sumX);
+        const intercepcion = (sumY - pendiente * sumX) / n;
+
+        const predicciones = [];
+        for (let i = 0; i < 30 * 24 * 60; i++) { // Predict for 30 days (assuming per-minute data)
+            const trend = pendiente * (n + i) + intercepcion;
+            const seasonal = seasonalAverages[(n + i) % seasonalPeriod];
+            predicciones.push(trend + seasonal);
+        }
+
+        // Return daily averages for the next 30 days
+        const dailyPredictions = [];
+        for (let i = 0; i < 30; i++) {
+            const dayData = predicciones.slice(i * 24 * 60, (i + 1) * 24 * 60);
+            dailyPredictions.push(dayData.reduce((sum, p) => sum + p, 0) / dayData.length);
+        }
+        return dailyPredictions;
+    }
+
+    function clusterizarElectrodomesticos(picos) {
+        if (picos.length < 3) return [];
+        const k = 3; // 3 clusters: bajo, medio, alto consumo
+        let centroides = picos.slice(0, k).map(p => p.diff);
+        let clusters = [];
+
+        for (let i = 0; i < 10; i++) { // 10 iteraciones
+            clusters = Array.from({length: k}, () => []);
+            picos.forEach(pico => {
+                const distancias = centroides.map(c => Math.abs(c - pico.diff));
+                const clusterIdx = distancias.indexOf(Math.min(...distancias));
+                clusters[clusterIdx].push(pico);
+            });
+            centroides = clusters.map(cluster => {
+                if (cluster.length === 0) return 0;
+                return cluster.reduce((sum, p) => sum + p.diff, 0) / cluster.length;
+            });
+        }
+        return clusters;
+    }
     </script>
 </body>
 </html>
