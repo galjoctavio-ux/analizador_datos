@@ -238,6 +238,58 @@
             font-weight: bold;
             margin: 10px 0;
         }
+
+        /* Chatbot Styles */
+        .chatbot-container {
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+            padding: 20px;
+            margin-top: 20px;
+        }
+        .chat-window {
+            height: 300px;
+            overflow-y: auto;
+            border: 1px solid #eee;
+            padding: 10px;
+            margin-bottom: 10px;
+            border-radius: 10px;
+        }
+        .chat-message {
+            margin-bottom: 10px;
+            padding: 8px 12px;
+            border-radius: 20px;
+            max-width: 80%;
+        }
+        .user-message {
+            background: #667eea;
+            color: white;
+            align-self: flex-end;
+            margin-left: auto;
+        }
+        .bot-message {
+            background: #f1f1f1;
+            color: #333;
+            align-self: flex-start;
+        }
+        .chat-input {
+            display: flex;
+        }
+        .chat-input input {
+            flex-grow: 1;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 20px;
+        }
+        .chat-input button {
+            background: #667eea;
+            color: white;
+            border: none;
+            padding: 10px 15px;
+            border-radius: 20px;
+            margin-left: 10px;
+            cursor: pointer;
+        }
     </style>
 </head>
 <body>
@@ -332,6 +384,8 @@
                 <div class="tab" onclick="switchTab('causal')">🔗 Análisis Causal</div>
                 <div class="tab" onclick="switchTab('ocupacion')">🏠 Ocupación</div>
                 <div class="tab" onclick="switchTab('impacto')">🌍 Impacto Ambiental</div>
+                <div class="tab" onclick="switchTab('avanzado')">🔬 Analytics Avanzados</div>
+                <div class="tab" onclick="switchTab('chatbot')">🤖 Chatbot IA</div>
 
             </div>
 
@@ -454,6 +508,37 @@
                 <div class="chart-container">
                     <h3>Comparativa de Huella de Carbono</h3>
                     <canvas id="carbonFootprintChart"></canvas>
+                </div>
+            </div>
+
+            <div id="tab-avanzado" class="tab-content">
+                <div class="metrics-grid" id="advancedAnalyticsMetrics"></div>
+                <div class="chart-grid">
+                    <div class="chart-container">
+                        <h3>📈 Eficiencia Horaria (%)</h3>
+                        <canvas id="hourlyEfficiencyChart"></canvas>
+                    </div>
+                    <div class="chart-container">
+                        <h3>⚡ Rampas de Consumo (W/s)</h3>
+                        <div id="rampsList" class="appliances-list" style="max-height: 400px; overflow-y: auto;"></div>
+                    </div>
+                </div>
+                <div class="insights-section">
+                    <h3>🔄 Uso Simultáneo de Aparatos</h3>
+                    <div id="simultaneousUseList" class="appliances-list" style="max-height: 400px; overflow-y: auto;"></div>
+                </div>
+            </div>
+
+            <div id="tab-chatbot" class="tab-content">
+                <div class="chatbot-container">
+                    <h3>🤖 Asistente de Análisis Energético</h3>
+                    <div class="chat-window" id="chatWindow">
+                        <div class="chat-message bot-message">Hola, soy tu asistente de energía. ¿En qué puedo ayudarte?</div>
+                    </div>
+                    <div class="chat-input">
+                        <input type="text" id="chatInput" placeholder="Escribe tu pregunta...">
+                        <button onclick="enviarMensajeChat()">Enviar</button>
+                    </div>
                 </div>
             </div>
 
@@ -739,6 +824,54 @@
             const consumoProyectado30d = consumoPromedio * (1 + tendencia * 30);
             const costoProyectado30d = (consumoProyectado30d * 24 * 30) / 1000 * precioKwh;
 
+            // ---- ANALYTICS AVANZADOS ----
+
+            // 1. Factor de Carga
+            const factorCarga = consumoPromedio / consumoMaximo;
+
+            // 2. Análisis de Rampas
+            const rampas = [];
+            for (let i = 1; i < datosLimpios.length; i++) {
+                const diffTiempo = (datosLimpios[i].time - datosLimpios[i-1].time) / 1000; // segundos
+                if (diffTiempo > 0) {
+                    const diffPotencia = datosLimpios[i].power - datosLimpios[i-1].power;
+                    const velocidad = diffPotencia / diffTiempo; // W/s
+                    if (Math.abs(velocidad) > 500) { // Umbral para rampas significativas
+                        rampas.push({
+                            time: datosLimpios[i].time,
+                            velocidad: velocidad,
+                            tipo: velocidad > 0 ? 'Subida' : 'Bajada'
+                        });
+                    }
+                }
+            }
+
+            // 3. Matriz de Uso Simultáneo (simplificado)
+            const usoSimultaneo = [];
+            const ventanaMinutos = 5;
+            for (let i = 0; i < picos.length; i++) {
+                for (let j = i + 1; j < picos.length; j++) {
+                    const diffTiempo = Math.abs(picos[i].time - picos[j].time) / (1000 * 60);
+                    if (diffTiempo < ventanaMinutos) {
+                        usoSimultaneo.push({
+                            time: picos[i].time,
+                            aparato1: picos[i].clasificacion.tipo,
+                            aparato2: picos[j].clasificacion.tipo,
+                            potenciaTotal: picos[i].diff + picos[j].diff
+                        });
+                    }
+                }
+            }
+
+            // 4. Eficiencia Horaria
+            const eficienciaHoraria = promedioPorHora.map((consumoHora, hora) => {
+                if (consumoHora === 0) return 0;
+                const consumoProductivo = consumoHora - consumoBase;
+                const eficiencia = (consumoProductivo / consumoHora) * 100;
+                return Math.max(0, eficiencia); // No puede ser negativo
+            });
+
+
             // Benchmarking (datos aproximados de México)
             const promedioNacionalMensual = 300; // kWh
             const tuConsumoMensual = (consumoPromedio * 24 * 30.5) / 1000;
@@ -756,7 +889,9 @@
                 costoFantasmaMes, ahorroMensual,
                 tendencia, consumoProyectado30d, costoProyectado30d,
                 tuConsumoMensual, promedioNacionalMensual, comparativoNacional,
-                precioKwh, tarifaCFE
+                precioKwh, tarifaCFE,
+                // Nuevos datos
+                factorCarga, rampas, usoSimultaneo, eficienciaHoraria
             };
 
             const componentes = calcularComponentesTemporales(datosLimpios);
@@ -823,6 +958,7 @@
             renderOccupancyMetrics();
             renderOccupancyChart();
             renderEnvironmentalImpact();
+            renderizarAdvancedAnalytics();
 
             document.getElementById('insightsList').innerHTML += generarDiagnosticoNLP();
         }
@@ -1704,25 +1840,39 @@ function generarDiagnosticoNLP() {
     const d = analyzedData;
     const score = d.scoreEficiencia;
 
+    let narrativaMejorable = `Tu hogar consume ${Math.abs(d.comparativoNacional).toFixed(0)}% más que el promedio.`;
+    if (d.factorCarga < 0.4) {
+        narrativaMejorable += ` Tu factor de carga es bajo (${(d.factorCarga * 100).toFixed(0)}%), lo que sugiere que tu capacidad eléctrica no se está usando eficientemente.`;
+    }
+    if (d.rampas.length > 10) {
+        narrativaMejorable += ` Se detectaron ${d.rampas.length} arranques bruscos de aparatos, lo cual puede dañar los equipos y aumentar el consumo.`;
+    }
+
+    let narrativaCritico = `Alerta: Estás en el ${(100 - (d.comparativoNacional > 0 ? d.comparativoNacional : 0)).toFixed(0)}% de consumo más alto. Hay desperdicio estructural.`;
+    if (d.usoSimultaneo.length > 5) {
+        narrativaCritico += ` Frecuentemente se usan aparatos de alto consumo al mismo tiempo, creando picos de demanda innecesarios.`;
+    }
+
+
     const perfiles = {
         'Excelente': {
             umbral: [80, 100],
-            narrativa: `Eres un maestro del ahorro energético. Tu hogar opera con ${(100-score).toFixed(0)}% menos desperdicio que el promedio. Tu secreto está en el uso racional de equipos y probablemente en tecnología eficiente.`,
+            narrativa: `Eres un maestro del ahorro energético. Tu hogar opera con un ${score.toFixed(0)}% de eficiencia. Tu secreto está en el uso racional de equipos y probablemente en tecnología eficiente. Tu factor de carga es óptimo con un (${(d.factorCarga * 100).toFixed(0)}%).`,
             meta: 'Mantén el liderazgo y considera paneles solares'
         },
         'Eficiente': {
             umbral: [60, 79],
             narrativa: `Tienes buenos hábitos con margen de optimización. El principal culpable es ${d.consumoBase > 120 ? 'el consumo fantasma nocturno' : 'la variabilidad diaria que indica uso inestable'}.`,
-            meta: 'Focalízate en automatización'
+            meta: 'Focalízate en automatización y en reducir los picos de consumo.'
         },
         'Mejorable': {
             umbral: [40, 59],
-            narrativa: `Tu hogar consume ${Math.abs(d.comparativoNacional).toFixed(0)}% más que el promedio. Detecté ${d.clusters.filter(c => c.costoMensualEstimado > 100).length} aparatos que te cuestan >$100/mes.`,
-            meta: 'Prioriza el reemplazo de equipos grandes'
+            narrativa: narrativaMejorable,
+            meta: 'Prioriza el reemplazo de equipos grandes y mejora tus hábitos de consumo.'
         },
         'Crítico': {
             umbral: [0, 39],
-            narrativa: `Alerta: Estás en el ${100-d.comparativoNacional.toFixed(0)}% de consumo más alto. Hay desperdicio estructural. Identifiqué ${d.picos.filter(p => p.diff > 2000).length} eventos de >2000W (posibles fugas térmicas).`,
+            narrativa: narrativaCritico,
             meta: 'Auditoría energética inmediata necesaria'
         }
     };
@@ -2306,6 +2456,125 @@ function exportarAExcel() {
             camera.updateProjectionMatrix();
             renderer.setSize(container.clientWidth, container.clientHeight);
         });
+    }
+
+    function renderizarAdvancedAnalytics() {
+        const d = analyzedData;
+
+        // Render Metrics
+        document.getElementById('advancedAnalyticsMetrics').innerHTML = `
+            <div class="metric-card">
+                <div class="metric-icon">📊</div>
+                <div class="metric-label">Factor de Carga</div>
+                <div class="metric-value">${(d.factorCarga * 100).toFixed(1)}%</div>
+                <div class="metric-detail">
+                    ${d.factorCarga > 0.6 ? '<span class="alert-badge alert-success">✓ Eficiente</span>' :
+                    d.factorCarga > 0.4 ? '<span class="alert-badge alert-info">o Normal</span>' :
+                    '<span class="alert-badge alert-warning">⚠️ Mejorable</span>'}
+                </div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-icon">⚡</div>
+                <div class="metric-label">Rampas Pronunciadas</div>
+                <div class="metric-value">${d.rampas.length}</div>
+                <div class="metric-detail">Eventos de cambio brusco de consumo</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-icon">🔄</div>
+                <div class="metric-label">Usos Simultáneos</div>
+                <div class="metric-value">${d.usoSimultaneo.length}</div>
+                <div class="metric-detail">Pares de aparatos encendidos al mismo tiempo</div>
+            </div>
+        `;
+
+        // Render Hourly Efficiency Chart
+        const ctx = document.getElementById('hourlyEfficiencyChart').getContext('2d');
+        if (chartInstances.hourlyEfficiency) chartInstances.hourlyEfficiency.destroy();
+        chartInstances.hourlyEfficiency = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: Array.from({length: 24}, (_, i) => i + ':00'),
+                datasets: [{
+                    label: 'Eficiencia (%)',
+                    data: d.eficienciaHoraria,
+                    backgroundColor: d.eficienciaHoraria.map(e => e > 80 ? '#2ecc71' : e > 60 ? '#f1c40f' : '#e74c3c')
+                }]
+            },
+            options: {
+                responsive: true,
+                scales: { y: { min: 0, max: 100, title: { display: true, text: 'Eficiencia (%)' } } }
+            }
+        });
+
+        // Render Ramps List
+        const rampsHtml = d.rampas.slice(0, 20).map(r => `
+            <div class="appliance-item" style="border-left-color: ${r.tipo === 'Subida' ? '#e74c3c' : '#3498db'}">
+                <div class="appliance-time">${r.time.toLocaleString('es-MX')}</div>
+                <div class="appliance-power"><strong>${r.tipo}:</strong> ${r.velocidad.toFixed(0)} W/s</div>
+            </div>
+        `).join('');
+        document.getElementById('rampsList').innerHTML = rampsHtml || '<p>No se detectaron rampas significativas.</p>';
+
+        // Render Simultaneous Use List
+        const simultaneousHtml = d.usoSimultaneo.slice(0, 20).map(s => `
+            <div class="appliance-item">
+                <div class="appliance-time">${s.time.toLocaleString('es-MX')}</div>
+                <div class="appliance-type"><strong>${s.aparato1}</strong> + <strong>${s.aparato2}</strong></div>
+                <div class="appliance-power">Potencia combinada: ${s.potenciaTotal.toFixed(0)} W</div>
+            </div>
+        `).join('');
+        document.getElementById('simultaneousUseList').innerHTML = simultaneousHtml || '<p>No se detectaron usos simultáneos frecuentes.</p>';
+    }
+
+    function enviarMensajeChat() {
+        const input = document.getElementById('chatInput');
+        const mensaje = input.value.trim();
+        if (mensaje === '') return;
+
+        const chatWindow = document.getElementById('chatWindow');
+
+        // Display user message
+        const userMessageDiv = document.createElement('div');
+        userMessageDiv.className = 'chat-message user-message';
+        userMessageDiv.textContent = mensaje;
+        chatWindow.appendChild(userMessageDiv);
+
+        // Process and get bot response
+        const botResponse = procesarPreguntaChat(mensaje);
+
+        // Display bot message
+        setTimeout(() => {
+            const botMessageDiv = document.createElement('div');
+            botMessageDiv.className = 'chat-message bot-message';
+            botMessageDiv.textContent = botResponse;
+            chatWindow.appendChild(botMessageDiv);
+            chatWindow.scrollTop = chatWindow.scrollHeight; // Auto-scroll
+        }, 500);
+
+        input.value = '';
+    }
+
+    function procesarPreguntaChat(pregunta) {
+        const d = analyzedData;
+        pregunta = pregunta.toLowerCase();
+
+        if (pregunta.includes('consumo') && pregunta.includes('subió')) {
+            if (d.tendencia > 0.01) {
+                return `Tu consumo ha subido principalmente por una tendencia al alza del ${(d.tendencia * 100).toFixed(1)}% diario. Revisa si has instalado nuevos aparatos.`;
+            } else {
+                const diaMasConsumo = d.diasSemana[d.promedioPorDia.indexOf(Math.max(...d.promedioPorDia))];
+                return `No detecto una subida general, pero tu día de mayor consumo es el ${diaMasConsumo}. Quizás la subida se concentró ese día.`;
+            }
+        } else if (pregunta.includes('aparato') && pregunta.includes('más consume')) {
+            const picoMaximo = d.picos.reduce((max, p) => p.diff > max.diff ? p : max, d.picos[0]);
+            return `El aparato que generó el mayor pico de consumo fue un(a) ${picoMaximo.clasificacion.tipo}, con un pico de ${picoMaximo.diff.toFixed(0)} W.`;
+        } else if (pregunta.includes('costo') && pregunta.includes('mes')) {
+            return `Tu costo mensual proyectado es de $${d.costoMes.toFixed(2)} MXN.`;
+        } else if (pregunta.includes('ahorrar')) {
+            return `Puedes ahorrar hasta $${d.ahorroMensual.toFixed(2)} MXN al mes si reduces tu consumo fantasma. También te recomiendo revisar los aparatos que usas en la hora pico (${d.promedioPorHora.indexOf(Math.max(...d.promedioPorHora))}:00).`;
+        } else {
+            return "Lo siento, no entendí esa pregunta. Puedes preguntarme sobre: '¿por qué subió mi consumo?', '¿qué aparato consume más?', '¿cuál es mi costo mensual?' o '¿cómo puedo ahorrar?'.";
+        }
     }
     </script>
 </body>
