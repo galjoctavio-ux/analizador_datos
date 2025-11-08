@@ -304,6 +304,7 @@
                 <div class="tab" onclick="switchTab('comparativas')">📊 Comparativas</div>
                 <div class="tab" onclick="switchTab('predicciones')">🔮 Predicciones</div>
                 <div class="tab" onclick="switchTab('causal')">🔗 Análisis Causal</div>
+                <div class="tab" onclick="switchTab('avanzado')">🔬 Analytics Avanzados</div>
             </div>
 
             <div id="tab-resumen" class="tab-content active">
@@ -393,6 +394,23 @@
                     <canvas id="causalChart"></canvas>
                 </div>
                 <div class="metrics-grid" id="causalMetrics"></div>
+            </div>
+
+            <div id="tab-avanzado" class="tab-content">
+                <div class="chart-grid">
+                    <div class="chart-container">
+                        <h3>⚡ Análisis de Rampas (Velocidad de Arranque)</h3>
+                        <canvas id="rampsChart"></canvas>
+                    </div>
+                    <div class="chart-container">
+                        <h3>💡 Eficiencia Horaria (Productivo vs Desperdicio)</h3>
+                        <canvas id="hourlyEfficiencyChart"></canvas>
+                    </div>
+                </div>
+                <div class="insights-section">
+                    <h3>🔄 Matriz de Uso Simultáneo de Aparatos</h3>
+                    <div id="simultaneousUseMatrix"></div>
+                </div>
             </div>
         </div>
     </div>
@@ -494,6 +512,8 @@
             const factorPotenciaPromedio = fpDatos.reduce((a, b) => a + b.powerFactor, 0) / fpDatos.length;
             const fpMinimo = Math.min(...fpDatos.map(d => d.powerFactor));
 
+            const factorCarga = consumoPromedio / consumoMaximo;
+
             // Detección de picos
             const picos = [];
             for (let i = 1; i < datosLimpios.length; i++) {
@@ -580,7 +600,7 @@
                 costoFantasmaMes, ahorroMensual,
                 tendencia, consumoProyectado30d, costoProyectado30d,
                 tuConsumoMensual, promedioNacionalMensual, comparativoNacional,
-                precioKwh, tarifaCFE
+                precioKwh, tarifaCFE, factorCarga
             };
 
             const componentes = calcularComponentesTemporales(datosLimpios);
@@ -588,6 +608,9 @@
             analyzedData.clusters = clusterizarDispositivos();
             analyzedData.desgaste = analizarDesgaste();
             analyzedData.deteccionAnomalias = componentes.residuales;
+            analyzedData.rampas = analisisRampas();
+            analyzedData.eficienciaHoraria = analisisEficienciaHoraria();
+            analyzedData.usoSimultaneo = analisisUsoSimultaneo();
 
             renderizarDashboard();
         }
@@ -626,6 +649,9 @@
             renderRecommendations();
             renderCausalAnalysis();
             document.getElementById('insightsList').innerHTML += generarDiagnosticoNLP();
+            renderRampsChart();
+            renderHourlyEfficiencyChart();
+            renderSimultaneousUseMatrix();
         }
 
         function renderMetricsGrid() {
@@ -693,6 +719,17 @@
                     <div class="metric-detail">
                         ${d.tendencia > 0 ? '📈 Incrementando' : '📉 Disminuyendo'}<br>
                         ${Math.abs(d.tendencia * 100).toFixed(2)}% por día
+                    </div>
+                </div>
+
+                <div class="metric-card">
+                    <div class="metric-icon">⚖️</div>
+                    <div class="metric-label">Factor de Carga</div>
+                    <div class="metric-value">${(d.factorCarga * 100).toFixed(1)}%</div>
+                    <div class="metric-detail">
+                        ${d.factorCarga < 0.3 ? '<span class="alert-badge alert-danger">⚠️ Ineficiente</span>' :
+                          d.factorCarga < 0.5 ? '<span class="alert-badge alert-warning">⚠️ Mejorable</span>' :
+                          '<span class="alert-badge alert-success">✓ Eficiente</span>'}
                     </div>
                 </div>
             `;
@@ -1448,6 +1485,54 @@ function renderCausalAnalysis() {
         }
     });
 }
+
+function analisisEficienciaHoraria() {
+    const d = analyzedData;
+    const porHora = Array(24).fill(0).map(() => ({ valor: 0, desperdicio: 0 }));
+
+    d.datosLimpios.forEach(dato => {
+        const hora = dato.time.getHours();
+        const consumoValor = Math.max(0, dato.power - d.consumoBase);
+        const consumoDesperdicio = Math.min(dato.power, d.consumoBase);
+
+        porHora[hora].valor += consumoValor;
+        porHora[hora].desperdicio += consumoDesperdicio;
+    });
+
+    return porHora;
+}
+
+function renderHourlyEfficiencyChart() {
+    const datos = analyzedData.eficienciaHoraria;
+    const ctx = document.getElementById('hourlyEfficiencyChart').getContext('2d');
+    if (chartInstances.efficiency) chartInstances.efficiency.destroy();
+
+    chartInstances.efficiency = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: Array.from({length: 24}, (_, i) => i + ':00'),
+            datasets: [
+                {
+                    label: 'Consumo de "Valor" (Wh)',
+                    data: datos.map(h => h.valor),
+                    backgroundColor: '#2ecc71'
+                },
+                {
+                    label: 'Consumo de "Desperdicio" (Wh)',
+                    data: datos.map(h => h.desperdicio),
+                    backgroundColor: '#e74c3c'
+                }
+            ]
+        },
+        options: {
+            responsive: true,
+            scales: {
+                x: { stacked: true },
+                y: { stacked: true, title: { display: true, text: 'Consumo Total (Wh)' } }
+            }
+        }
+    });
+}
 // Generador de narrativas personalizadas
 function generarDiagnosticoNLP() {
     const d = analyzedData;
@@ -1556,6 +1641,122 @@ function generarReporteEjecutivo() {
     a.href = url;
     a.download = `reporte_energia_${new Date().toISOString().slice(0,10)}.json`;
     a.click();
+}
+
+function analisisRampas() {
+    const d = analyzedData.datosLimpios;
+    const rampas = [];
+    for (let i = 1; i < d.length; i++) {
+        const dt = (d[i].time - d[i-1].time) / 1000; // segundos
+        if (dt > 0) {
+            const dp = d[i].power - d[i-1].power;
+            rampas.push(dp / dt); // W/s
+        }
+    }
+    return rampas;
+}
+
+function renderRampsChart() {
+    const rampas = analyzedData.rampas.filter(r => Math.abs(r) > 10); // Filtrar ruido
+    const ctx = document.getElementById('rampsChart').getContext('2d');
+    if (chartInstances.ramps) chartInstances.ramps.destroy();
+
+    const categorias = {
+        'Arranque Suave (<100W/s)': rampas.filter(r => r > 10 && r < 100).length,
+        'Arranque Rápido (100-500W/s)': rampas.filter(r => r >= 100 && r < 500).length,
+        'Arranque Brusco (>500W/s)': rampas.filter(r => r >= 500).length,
+        'Apagado Suave (<100W/s)': rampas.filter(r => r < -10 && r > -100).length,
+        'Apagado Brusco (>100W/s)': rampas.filter(r => r <= -100).length,
+    };
+
+    chartInstances.ramps = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: Object.keys(categorias),
+            datasets: [{
+                label: 'Número de Eventos',
+                data: Object.values(categorias),
+                backgroundColor: ['#2ecc71', '#f39c12', '#e74c3c', '#3498db', '#9b59b6']
+            }]
+        },
+        options: {
+            responsive: true,
+            plugins: { legend: { display: false } },
+            scales: { x: { ticks: { autoSkip: false, maxRotation: 45, minRotation: 45 } } }
+        }
+    });
+}
+
+function analisisUsoSimultaneo() {
+    const umbral = analyzedData.umbralPico;
+    const datos = analyzedData.datosLimpios;
+    const eventos = [];
+    for (let i = 1; i < datos.length; i++) {
+        const diff = datos[i].power - datos[i-1].power;
+        if (Math.abs(diff) > umbral) {
+            eventos.push({
+                time: datos[i].time,
+                tipo: diff > 0 ? 'ON' : 'OFF',
+                aparato: clasificarAparato(Math.abs(diff)).tipo
+            });
+        }
+    }
+
+    const aparatos = [...new Set(eventos.map(e => e.aparato))];
+    const matriz = Object.fromEntries(aparatos.map(a => [a, Object.fromEntries(aparatos.map(b => [b, 0]))]));
+
+    for (let i = 0; i < eventos.length; i++) {
+        if (eventos[i].tipo === 'ON') {
+            for (let j = i + 1; j < eventos.length; j++) {
+                // Si el siguiente evento ocurre en los próximos 5 minutos
+                if ((eventos[j].time - eventos[i].time) / (1000 * 60) > 5) break;
+
+                if (eventos[j].tipo === 'ON' && eventos[i].aparato !== eventos[j].aparato) {
+                    matriz[eventos[i].aparato][eventos[j].aparato]++;
+                    matriz[eventos[j].aparato][eventos[i].aparato]++;
+                }
+            }
+        }
+    }
+    return { aparatos, matriz };
+}
+
+function renderSimultaneousUseMatrix() {
+    const { aparatos, matriz } = analyzedData.usoSimultaneo;
+    const container = document.getElementById('simultaneousUseMatrix');
+
+    if (aparatos.length === 0) {
+        container.innerHTML = '<p>No se detectaron suficientes eventos para generar una matriz.</p>';
+        return;
+    }
+
+    let html = `<table class="comparison-table"><thead><tr><th>Aparato</th>`;
+    aparatos.forEach(a => html += `<th>${a}</th>`);
+    html += `</tr></thead><tbody>`;
+
+    let maxVal = 0;
+    aparatos.forEach(a1 => aparatos.forEach(a2 => {
+        if (a1 !== a2 && matriz[a1][a2] > maxVal) {
+            maxVal = matriz[a1][a2];
+        }
+    }));
+
+    aparatos.forEach(a1 => {
+        html += `<tr><td><strong>${a1}</strong></td>`;
+        aparatos.forEach(a2 => {
+            const val = matriz[a1][a2];
+            if (a1 === a2) {
+                html += `<td style="background: #eee;">-</td>`;
+            } else {
+                const opacity = maxVal > 0 ? (val / maxVal) : 0;
+                html += `<td style="background: rgba(102, 126, 234, ${opacity}); color: ${opacity > 0.5 ? 'white' : 'black'}">${val}</td>`;
+            }
+        });
+        html += `</tr>`;
+    });
+
+    html += `</tbody></table>`;
+    container.innerHTML = html;
 }
     </script>
 </body>
