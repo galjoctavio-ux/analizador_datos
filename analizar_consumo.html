@@ -233,9 +233,114 @@
             font-weight: bold;
             margin: 10px 0;
         }
+
+        .chatbot-container {
+            margin-top: 20px;
+            border: 2px solid #eee;
+            border-radius: 10px;
+            overflow: hidden;
+        }
+
+        .chat-window {
+            height: 400px;
+            overflow-y: auto;
+            padding: 20px;
+            background: #f9f9f9;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        .chat-message {
+            padding: 12px 18px;
+            border-radius: 20px;
+            max-width: 80%;
+            line-height: 1.5;
+        }
+
+        .chat-message.user {
+            background: #667eea;
+            color: white;
+            align-self: flex-end;
+            border-bottom-right-radius: 5px;
+        }
+
+        .chat-message.bot {
+            background: #e9e9f0;
+            color: #333;
+            align-self: flex-start;
+            border-bottom-left-radius: 5px;
+        }
+
+        .chat-input-area {
+            display: flex;
+            padding: 15px;
+            border-top: 2px solid #eee;
+        }
+
+        .chat-input-area input {
+            flex-grow: 1;
+            padding: 12px;
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            margin-right: 10px;
+        }
+
+        .chat-input-area button {
+            padding: 12px 25px;
+            border: none;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: bold;
+        }
+
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            overflow: auto;
+            background-color: rgba(0,0,0,0.5);
+        }
+
+        .modal-content {
+            background-color: #fefefe;
+            margin: 5% auto;
+            padding: 30px;
+            border: 1px solid #888;
+            width: 80%;
+            max-width: 800px;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+        }
+
+        .close-button {
+            color: #aaa;
+            float: right;
+            font-size: 28px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+
+        .close-button:hover,
+        .close-button:focus {
+            color: black;
+        }
     </style>
 </head>
 <body>
+    <div id="reporteModal" class="modal">
+        <div class="modal-content">
+            <span class="close-button" onclick="document.getElementById('reporteModal').style.display='none'">&times;</span>
+            <div id="reporteContenido"></div>
+        </div>
+    </div>
+
     <div class="container">
         <div class="header">
             <h1>⚡ Analizador Energético Avanzado</h1>
@@ -304,6 +409,7 @@
                 <div class="tab" onclick="switchTab('comparativas')">📊 Comparativas</div>
                 <div class="tab" onclick="switchTab('predicciones')">🔮 Predicciones</div>
                 <div class="tab" onclick="switchTab('causal')">🔗 Análisis Causal</div>
+                <div class="tab" onclick="switchTab('chatbot')">🤖 Chatbot de Análisis</div>
             </div>
 
             <div id="tab-resumen" class="tab-content active">
@@ -393,6 +499,22 @@
                     <canvas id="causalChart"></canvas>
                 </div>
                 <div class="metrics-grid" id="causalMetrics"></div>
+            </div>
+
+            <div id="tab-chatbot" class="tab-content">
+                <div class="insights-section">
+                    <h3>🤖 Chatbot de Análisis IA</h3>
+                    <p>Haz una pregunta en lenguaje natural sobre tus datos.</p>
+                    <div class="chatbot-container">
+                        <div class="chat-window" id="chatWindow">
+                            <div class="chat-message bot">¡Hola! Soy tu asistente energético. Pregúntame algo como "¿Por qué subió mi consumo?" o "¿Cuál es mi aparato más caro?".</div>
+                        </div>
+                        <div class="chat-input-area">
+                            <input type="text" id="chatInput" placeholder="Escribe tu pregunta aquí...">
+                            <button onclick="enviarPreguntaChatbot()">Enviar</button>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
@@ -1532,30 +1654,132 @@ function simularOptimizacion() {
 // Generador de reportes PDF (simulado)
 function generarReporteEjecutivo() {
     const d = analyzedData;
+    if (!d) {
+        alert("Primero carga y analiza tus datos.");
+        return;
+    }
 
-    const reporte = {
-        fecha: new Date().toISOString(),
-        score: d.scoreEficiencia,
-        consumoMensual: d.tuConsumoMensual,
-        costo: d.costoMes,
-        top3Ahorros: d.clusters.slice(0,3).map(c => ({
-            aparato: c.tipo,
-            ahorro: c.costoMensualEstimado * 0.4
-        })),
-        alertas: [
-            d.consumoBase > 150 ? 'Consumo fantasma crítico' : null,
-            d.factorPotenciaPromedio < 0.85 ? 'Bajo factor de potencia' : null
-        ].filter(Boolean),
-        recomendaciones: generarDiagnosticoNLP()
-    };
+    const perfil = Object.entries({
+        'Excelente': [80, 100], 'Eficiente': [60, 79], 'Mejorable': [40, 59], 'Crítico': [0, 39]
+    }).find(([,p]) => d.scoreEficiencia >= p[0] && d.scoreEficiencia <= p[1])[0];
 
-    // Simula descarga
-    const blob = new Blob([JSON.stringify(reporte, null, 2)], {type: 'application/json'});
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `reporte_energia_${new Date().toISOString().slice(0,10)}.json`;
-    a.click();
+    const aparatoMasCaro = d.clusters[0];
+
+    const contenido = `
+        <style>
+            .reporte-header { text-align: center; margin-bottom: 20px; }
+            .reporte-header h2 { color: #667eea; }
+            .reporte-section { margin-bottom: 20px; }
+            .reporte-section h3 { border-bottom: 2px solid #667eea; padding-bottom: 5px; margin-bottom: 10px; }
+            .reporte-kpi { display: flex; justify-content: space-around; text-align: center; margin: 20px 0; }
+            .reporte-kpi-item strong { font-size: 1.5em; color: #764ba2; }
+        </style>
+        <div class="reporte-header">
+            <h2>📄 Reporte Ejecutivo de Desempeño Energético</h2>
+            <p>Periodo analizado: ${new Date(d.datosLimpios[0].time).toLocaleDateString()} - ${new Date(d.datosLimpios[d.datosLimpios.length - 1].time).toLocaleDateString()}</p>
+        </div>
+
+        <div class="reporte-section">
+            <h3>1. Resumen de Desempeño</h3>
+            <p>Tu hogar ha obtenido un <strong>Score de Eficiencia de ${d.scoreEficiencia.toFixed(0)}/100</strong>, lo que te clasifica con un perfil <strong>${perfil}</strong>. A continuación, se presentan los indicadores clave:</p>
+            <div class="reporte-kpi">
+                <div class="reporte-kpi-item">
+                    <span>Consumo Mensual</span><br>
+                    <strong>${d.tuConsumoMensual.toFixed(0)} kWh</strong>
+                </div>
+                <div class="reporte-kpi-item">
+                    <span>Costo Mensual Estimado</span><br>
+                    <strong>$${d.costoMes.toFixed(2)} MXN</strong>
+                </div>
+                <div class="reporte-kpi-item">
+                    <span>Costo Fantasma</span><br>
+                    <strong>$${d.costoFantasmaMes.toFixed(2)}/mes</strong>
+                </div>
+            </div>
+            <p>${generarDiagnosticoNLP().match(/<div class="insight-description">(.*?)<\/div>/)[1]}</p>
+        </div>
+
+        <div class="reporte-section">
+            <h3>2. Principales Hallazgos y Oportunidades</h3>
+            <ul>
+                <li><strong>Oportunidad Principal:</strong> ${aparatoMasCaro ? `El aparato/grupo '${aparatoMasCaro.tipo.tipo}' representa tu mayor área de ahorro, con un costo estimado de $${aparatoMasCaro.costoMensualEstimado.toFixed(2)}/mes.` : 'No se detectó un único aparato como principal consumidor.'}</li>
+                <li><strong>Consumo Fantasma:</strong> Tu consumo base de ${d.consumoBase.toFixed(0)}W es ${d.consumoBase > 100 ? 'elevado, representando una fuga constante de energía' : 'óptimo, indicando buenos hábitos de desconexión'}.</li>
+                <li><strong>Eficiencia de Equipos:</strong> Con un factor de potencia promedio de ${d.factorPotenciaPromedio.toFixed(3)}, tus equipos son ${d.factorPotenciaPromedio > 0.9 ? 'altamente eficientes' : 'mejorables. Podrías estar perdiendo energía por equipos de baja calidad'}.</li>
+            </ul>
+        </div>
+
+        <div class="reporte-section">
+            <h3>3. Plan de Acción Recomendado</h3>
+            <ol>
+                <li><strong>Acción Inmediata (Ahorro >$${(d.costoFantasmaMes * 0.5).toFixed(2)}/mes):</strong> Implementar una estrategia para reducir el consumo fantasma. Usa regletas con interruptor y desconecta cargadores que no estén en uso.</li>
+                <li><strong>Acción a Mediano Plazo (Eficiencia +10%):</strong> Identificar y reemplazar equipos con bajo factor de potencia, como cargadores no originales o electrodomésticos antiguos.</li>
+                <li><strong>Optimización de Hábitos:</strong> Considera reprogramar el uso de aparatos de alto consumo (p. ej., lavadora) a horarios de menor demanda (madrugada) para aplanar tu curva de consumo.</li>
+            </ol>
+        </div>
+    `;
+
+    document.getElementById('reporteContenido').innerHTML = contenido;
+    document.getElementById('reporteModal').style.display = 'block';
+}
+
+function enviarPreguntaChatbot() {
+    const input = document.getElementById('chatInput');
+    const pregunta = input.value.trim();
+    if (!pregunta) return;
+
+    agregarMensajeChat(pregunta, 'user');
+    input.value = '';
+
+    setTimeout(() => {
+        const respuesta = generarRespuestaChatbot(pregunta);
+        agregarMensajeChat(respuesta, 'bot');
+    }, 500);
+}
+
+function agregarMensajeChat(texto, tipo) {
+    const chatWindow = document.getElementById('chatWindow');
+    const mensajeDiv = document.createElement('div');
+    mensajeDiv.className = `chat-message ${tipo}`;
+    mensajeDiv.textContent = texto;
+    chatWindow.appendChild(mensajeDiv);
+    chatWindow.scrollTop = chatWindow.scrollHeight;
+}
+
+function generarRespuestaChatbot(pregunta) {
+    const d = analyzedData;
+    pregunta = pregunta.toLowerCase();
+
+    if (!d) {
+        return "Primero necesitas cargar y analizar un archivo CSV para que pueda responder a tus preguntas.";
+    }
+
+    if (pregunta.includes("consumo") && (pregunta.includes("subió") || pregunta.includes("aumentó"))) {
+        const insight = d.tendencia > 0.01 ? `He notado una tendencia al alza del ${(d.tendencia * 100).toFixed(2)}% diario. Esto podría deberse a un nuevo electrodoméstico o a un mayor uso de equipos existentes.` : `En realidad, tu consumo parece estar disminuyendo o estable. La tendencia actual es del ${(d.tendencia * 100).toFixed(2)}% diario.`;
+        return `Análisis de tendencia: ${insight} Revisa la pestaña de "Predicciones" para más detalles.`;
+    }
+
+    if (pregunta.includes("aparato") && (pregunta.includes("caro") || pregunta.includes("gasta más"))) {
+        const aparatoMasCaro = d.clusters[0];
+        if (aparatoMasCaro) {
+            return `El grupo de aparatos que más consume es '${aparatoMasCaro.tipo.tipo}', con un costo mensual estimado de $${aparatoMasCaro.costoMensualEstimado.toFixed(2)}. Este grupo se activa unas ${aparatoMasCaro.frecuencia} veces en el periodo analizado.`;
+        }
+        return "No pude identificar un aparato dominante. Revisa la lista de 'Picos Detectados' en la pestaña de Electrodomésticos.";
+    }
+
+    if (pregunta.includes("consumo fantasma") || pregunta.includes("standby")) {
+        return `Tu consumo fantasma es de ${d.consumoBase.toFixed(0)}W, lo que te cuesta aproximadamente $${d.costoFantasmaMes.toFixed(2)} al mes. Esto es ${d.consumoBase > 100 ? 'un poco alto' : 'bastante bueno'}. Puedes reducirlo desconectando cargadores y usando regletas.`;
+    }
+
+    if (pregunta.includes("eficiente")) {
+        return `Tu 'Score de Eficiencia' es de ${d.scoreEficiencia.toFixed(0)}/100. ${d.scoreEficiencia > 80 ? '¡Excelente trabajo!' : d.scoreEficiencia > 60 ? 'Vas por buen camino, pero hay áreas de mejora.' : 'Hay oportunidades significativas para mejorar tu eficiencia y ahorrar dinero.'}`;
+    }
+
+    if (pregunta.includes("comparación") || pregunta.includes("promedio")) {
+        const comparacion = d.comparativoNacional > 0 ? `un ${d.comparativoNacional.toFixed(0)}% por encima` : `un ${Math.abs(d.comparativoNacional).toFixed(0)}% por debajo`;
+        return `Tu consumo mensual de ${d.tuConsumoMensual.toFixed(0)} kWh está ${comparacion} del promedio nacional mexicano. Puedes ver un gráfico detallado en la pestaña 'Comparativas'.`;
+    }
+
+    return "Lo siento, no entendí esa pregunta. Intenta preguntar sobre: 'aumento de consumo', 'aparato más caro', 'consumo fantasma', 'eficiencia' o 'comparación con el promedio'.";
 }
     </script>
 </body>
