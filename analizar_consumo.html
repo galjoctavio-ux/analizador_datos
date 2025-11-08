@@ -386,6 +386,7 @@
                 <div class="tab" onclick="switchTab('impacto')">🌍 Impacto Ambiental</div>
                 <div class="tab" onclick="switchTab('avanzado')">🔬 Analytics Avanzados</div>
                 <div class="tab" onclick="switchTab('chatbot')">🤖 Chatbot IA</div>
+                <div class="tab" onclick="switchTab('seriesTemporales')">🕰️ Series Temporales</div>
 
             </div>
 
@@ -542,6 +543,23 @@
                 </div>
             </div>
 
+            <div id="tab-seriesTemporales" class="tab-content">
+                <div class="chart-grid">
+                    <div class="chart-container">
+                        <h3>📊 Autocorrelación (ACF)</h3>
+                        <canvas id="acfChart"></canvas>
+                    </div>
+                    <div class="chart-container">
+                        <h3>📈 Análisis de Frecuencias (Fourier)</h3>
+                        <canvas id="fftChart"></canvas>
+                    </div>
+                </div>
+                <div class="insights-section">
+                    <p><strong>Autocorrelación:</strong> Muestra cómo el consumo de un momento se parece al de momentos pasados. Picos altos sugieren patrones repetitivos (ej. un pico cada 24 horas indica un ciclo diario).</p>
+                    <p><strong>Análisis de Frecuencias:</strong> Descompone la señal de consumo en sus ciclos fundamentales. Un pico en el gráfico revela una frecuencia dominante (ej. un ciclo que se repite cada 8 horas).</p>
+                </div>
+            </div>
+
 
                 </div>
             </div>
@@ -618,6 +636,10 @@
 
             if (tabName === 'vista3d') {
                 renderizarVista3D();
+            }
+            if (tabName === 'seriesTemporales') {
+                renderACFChart();
+                renderFFTChart();
             }
         }
 
@@ -900,6 +922,8 @@
             analyzedData.desgaste = analizarDesgaste();
             analyzedData.deteccionAnomalias = componentes.residuales;
             analyzedData.occupancy = estimateOccupancy(datosLimpios);
+            analyzedData.acf = calcularACF(potencias, 48); // Autocorrelación para 48 retardos (asumiendo datos horarios)
+            analyzedData.fft = calcularFFT(potencias.slice(0, 1024)); // FFT sobre una muestra de datos
 
             renderizarDashboard();
             const anomalias = detectarAnomalias(analyzedData.datosLimpios);
@@ -2575,6 +2599,143 @@ function exportarAExcel() {
         } else {
             return "Lo siento, no entendí esa pregunta. Puedes preguntarme sobre: '¿por qué subió mi consumo?', '¿qué aparato consume más?', '¿cuál es mi costo mensual?' o '¿cómo puedo ahorrar?'.";
         }
+    }
+
+    function calcularACF(series, maxLag) {
+        const n = series.length;
+        const mean = series.reduce((a, b) => a + b, 0) / n;
+        const variance = series.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0);
+
+        const acf = [];
+        for (let lag = 0; lag <= maxLag; lag++) {
+            let covariance = 0;
+            for (let i = lag; i < n; i++) {
+                covariance += (series[i] - mean) * (series[i - lag] - mean);
+            }
+            acf.push(covariance / variance);
+        }
+        return acf;
+    }
+
+    function renderACFChart() {
+        const d = analyzedData;
+        if (!d.acf) return;
+
+        const ctx = document.getElementById('acfChart').getContext('2d');
+        if (chartInstances.acf) chartInstances.acf.destroy();
+
+        const confidenceInterval = 1.96 / Math.sqrt(d.datosLimpios.length);
+
+        chartInstances.acf = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: Array.from({length: d.acf.length}, (_, i) => `Lag ${i}`),
+                datasets: [{
+                    label: 'ACF',
+                    data: d.acf,
+                    backgroundColor: d.acf.map(v => Math.abs(v) > confidenceInterval ? '#e74c3c' : '#667eea')
+                }]
+            },
+            options: {
+                responsive: true,
+                plugins: {
+                    legend: { display: false },
+                    annotation: {
+                        annotations: [{
+                            type: 'line',
+                            mode: 'horizontal',
+                            scaleID: 'y',
+                            value: confidenceInterval,
+                            borderColor: 'grey',
+                            borderWidth: 1,
+                            borderDash: [5, 5]
+                        }, {
+                            type: 'line',
+                            mode: 'horizontal',
+                            scaleID: 'y',
+                            value: -confidenceInterval,
+                            borderColor: 'grey',
+                            borderWidth: 1,
+                            borderDash: [5, 5]
+                        }]
+                    }
+                },
+                scales: {
+                    y: {
+                        title: { display: true, text: 'Coeficiente de Autocorrelación' }
+                    }
+                }
+            }
+        });
+    }
+
+    function calcularFFT(series) {
+        const n = series.length;
+        if (n === 0 || (n & (n - 1)) !== 0) { // Check if n is a power of 2
+            console.error("FFT requires a power-of-two length series.");
+            return [];
+        }
+
+        const re = Float64Array.from(series);
+        const im = new Float64Array(n).fill(0);
+
+        // Cooley-Tukey FFT
+        for (var i = 0; i < n; i++) {
+            for(var j = 0, h = i, k = n; k >>= 1; h >>= 1)
+                j = (j << 1) | (h & 1);
+            if (j > i) {
+                [re[j], re[i]] = [re[i], re[j]];
+                [im[j], im[i]] = [im[i], im[j]];
+            }
+        }
+
+        for(let hN = 1; hN * 2 <= n; hN *= 2) {
+            for (let i = 0; i < n; i += hN * 2) {
+                for (let j = i; j < i + hN; j++) {
+                    const cos = Math.cos(Math.PI * (j - i) / hN);
+                    const sin = Math.sin(Math.PI * (j - i) / hN);
+                    const tre = re[j + hN] * cos + im[j + hN] * sin;
+                    const tim = -re[j + hN] * sin + im[j + hN] * cos;
+                    re[j + hN] = re[j] - tre;
+                    im[j + hN] = im[j] - tim;
+                    re[j] += tre;
+                    im[j] += tim;
+                }
+            }
+        }
+
+        const amplitudes = re.map((r, i) => Math.sqrt(r * r + im[i] * im[i]));
+        return amplitudes.slice(1, n / 2);
+    }
+
+    function renderFFTChart() {
+        const d = analyzedData;
+        if (!d.fft) return;
+
+        const ctx = document.getElementById('fftChart').getContext('2d');
+        if (chartInstances.fft) chartInstances.fft.destroy();
+
+        chartInstances.fft = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: Array.from({length: d.fft.length}, (_, i) => `${i + 1} cycles`),
+                datasets: [{
+                    label: 'Amplitud',
+                    data: d.fft,
+                    borderColor: '#764ba2',
+                    backgroundColor: 'rgba(118, 75, 162, 0.1)',
+                    fill: true
+                }]
+            },
+            options: {
+                responsive: true,
+                plugins: { legend: { display: false } },
+                scales: {
+                    y: { title: { display: true, text: 'Amplitud' } },
+                    x: { title: { display: true, text: 'Frecuencia (ciclos por periodo de muestreo)' } }
+                }
+            }
+        });
     }
     </script>
 </body>
