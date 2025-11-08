@@ -189,6 +189,57 @@
         .tab-content { display: none; }
         .tab-content.active { display: block; }
 
+        .gamification-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+
+        .gamification-card {
+            background: white;
+            padding: 25px;
+            border-radius: 15px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+        }
+
+        .achievement-badge {
+            display: flex;
+            align-items: center;
+            margin: 15px 0;
+            padding: 10px;
+            border-radius: 10px;
+            transition: transform 0.2s;
+        }
+
+        .achievement-badge.locked {
+            opacity: 0.5;
+            filter: grayscale(80%);
+        }
+
+        .achievement-badge.unlocked {
+            background: #f0f8ff;
+            border: 2px solid #667eea;
+        }
+
+        .achievement-badge:hover {
+            transform: scale(1.03);
+        }
+
+        .badge-icon {
+            font-size: 3em;
+            margin-right: 15px;
+        }
+
+        .badge-info h4 {
+            font-size: 1.2em;
+            color: #333;
+        }
+
+        .badge-info p {
+            color: #666;
+        }
+
         .comparison-table {
             width: 100%;
             border-collapse: collapse;
@@ -304,6 +355,7 @@
                 <div class="tab" onclick="switchTab('comparativas')">📊 Comparativas</div>
                 <div class="tab" onclick="switchTab('predicciones')">🔮 Predicciones</div>
                 <div class="tab" onclick="switchTab('causal')">🔗 Análisis Causal</div>
+                <div class="tab" onclick="switchTab('gamificacion')">🏆 Gamificación</div>
             </div>
 
             <div id="tab-resumen" class="tab-content active">
@@ -393,6 +445,41 @@
                     <canvas id="causalChart"></canvas>
                 </div>
                 <div class="metrics-grid" id="causalMetrics"></div>
+            </div>
+
+            <div id="tab-gamificacion" class="tab-content">
+                <div class="gamification-grid">
+                    <div class="gamification-card">
+                        <h3>🏆 Mis Logros</h3>
+                        <div id="achievementsList"></div>
+                    </div>
+                    <div class="gamification-card">
+                        <h3>🏘️ Competencia Anónima</h3>
+                        <p>Compara tu consumo con el de tus vecinos. ¡Totalmente anónimo!</p>
+                        <p><em>(Función de demostración con datos simulados)</em></p>
+                        <div class="config-item" style="margin-top: 15px;">
+                            <label>Tu código postal:</label>
+                            <input type="text" id="postalCode" placeholder="Ej. 06500" onchange="renderGamificacion()">
+                        </div>
+                        <canvas id="neighborhoodChart" style="margin-top: 20px;"></canvas>
+                    </div>
+                    <div class="gamification-card">
+                        <h3>🎯 Metas Personales</h3>
+                        <p>Define tu objetivo de ahorro y sigue tu progreso.</p>
+                        <p><em>(Función de demostración con datos simulados)</em></p>
+                        <div class="config-section" style="grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 15px;">
+                            <div class="config-item">
+                                <label>Reducir consumo en:</label>
+                                <input type="number" id="goalPercentage" value="15" step="1" onchange="renderGamificacion()">
+                            </div>
+                            <div class="config-item">
+                                <label>En los próximos (meses):</label>
+                                <input type="number" id="goalMonths" value="2" step="1" onchange="renderGamificacion()">
+                            </div>
+                        </div>
+                        <canvas id="goalChart" style="margin-top: 20px;"></canvas>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
@@ -588,8 +675,28 @@
             analyzedData.clusters = clusterizarDispositivos();
             analyzedData.desgaste = analizarDesgaste();
             analyzedData.deteccionAnomalias = componentes.residuales;
+            analyzedData.achievements = checkAchievements();
 
             renderizarDashboard();
+        }
+
+        function checkAchievements() {
+            const d = analyzedData;
+            const achievements = [
+                { id: 'vampire_week', icon: '🧛', title: 'Semana sin Vampiros', desc: 'Mantén el consumo fantasma bajo 75W por 7 días', unlocked: false },
+                { id: 'low_avg_month', icon: '📉', title: 'Mes Bajo Promedio', desc: 'Tu consumo mensual es menor al promedio nacional', unlocked: false },
+                { id: 'efficiency_expert', icon: '🧑‍🔬', title: 'Experto en Eficiencia', desc: 'Logra un score de eficiencia de 90 o más', unlocked: false },
+                { id: 'peak_controller', icon: '🧗', title: 'Controlador de Picos', desc: 'No tener más de 5 picos de alto consumo en una semana', unlocked: false },
+                { id: 'data_explorer', icon: '🗺️', title: 'Explorador de Datos', desc: 'Usar el dashboard por primera vez', unlocked: true },
+            ];
+
+            // Lógica de desbloqueo (simplificada)
+            if (d.consumoBase < 75 && d.diasDatos >= 7) achievements[0].unlocked = true;
+            if (d.tuConsumoMensual < d.promedioNacionalMensual) achievements[1].unlocked = true;
+            if (d.scoreEficiencia >= 90) achievements[2].unlocked = true;
+            if ((d.categorias['Alto consumo'] || 0) < 5 && d.diasDatos >= 7) achievements[3].unlocked = true;
+
+            return achievements;
         }
 
         function calcularTendencia(datos) {
@@ -625,7 +732,121 @@
             renderPredictionChart();
             renderRecommendations();
             renderCausalAnalysis();
+            renderGamificacion();
             document.getElementById('insightsList').innerHTML += generarDiagnosticoNLP();
+        }
+
+        function renderGamificacion() {
+            const d = analyzedData;
+            const achievementsHtml = d.achievements.map(ach => `
+                <div class="achievement-badge ${ach.unlocked ? 'unlocked' : 'locked'}">
+                    <div class="badge-icon">${ach.icon}</div>
+                    <div class="badge-info">
+                        <h4>${ach.title}</h4>
+                        <p>${ach.desc}</p>
+                    </div>
+                </div>
+            `).join('');
+            document.getElementById('achievementsList').innerHTML = achievementsHtml;
+
+            const postalCode = document.getElementById('postalCode').value;
+            if (postalCode.length === 5) { // Simple validation for a 5-digit postal code
+                // Simulate neighborhood data
+                const userConsumption = d.tuConsumoMensual;
+                const neighborhoodAvg = userConsumption * (1 + (Math.random() - 0.5) * 0.4); // +/- 20%
+                const top10Percent = neighborhoodAvg * 0.6; // Top 10% are 40% more efficient
+
+                const ctx = document.getElementById('neighborhoodChart').getContext('2d');
+                if (chartInstances.neighborhood) chartInstances.neighborhood.destroy();
+
+                chartInstances.neighborhood = new Chart(ctx, {
+                    type: 'bar',
+                    data: {
+                        labels: ['Tu Consumo', 'Promedio Vecindario', 'Top 10% Ahorradores'],
+                        datasets: [{
+                            label: 'Consumo Mensual (kWh)',
+                            data: [userConsumption, neighborhoodAvg, top10Percent],
+                            backgroundColor: ['#667eea', '#f39c12', '#2ecc71']
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        plugins: {
+                            legend: { display: false },
+                            tooltip: {
+                                callbacks: {
+                                    label: function(context) {
+                                        let label = context.dataset.label || '';
+                                        if (label) {
+                                            label += ': ';
+                                        }
+                                        if (context.parsed.y !== null) {
+                                            label += context.parsed.y.toFixed(0) + ' kWh';
+                                        }
+                                        return label;
+                                    }
+                                }
+                            }
+                        },
+                        scales: {
+                            y: {
+                                beginAtZero: true,
+                                title: {
+                                    display: true,
+                                    text: 'kWh/mes'
+                                }
+                            }
+                        }
+                    }
+                });
+            }
+
+            const goalPercentage = parseFloat(document.getElementById('goalPercentage').value) || 0;
+            const goalMonths = parseInt(document.getElementById('goalMonths').value) || 1;
+
+            if (goalPercentage > 0) {
+                const initialConsumption = d.tuConsumoMensual;
+                const targetConsumption = initialConsumption * (1 - goalPercentage / 100);
+
+                // Simplified progress simulation
+                const currentProgress = initialConsumption * (1 - (goalPercentage / 100) * (Math.random() * 0.5 + 0.1)); // Simula un progreso parcial
+
+                const goalCtx = document.getElementById('goalChart').getContext('2d');
+                if (chartInstances.goal) chartInstances.goal.destroy();
+
+                chartInstances.goal = new Chart(goalCtx, {
+                    type: 'line',
+                    data: {
+                        labels: ['Inicio', 'Progreso Actual', `Meta (${goalMonths} meses)`],
+                        datasets: [
+                            {
+                                label: 'Tu Progreso',
+                                data: [initialConsumption, currentProgress, null],
+                                borderColor: '#667eea',
+                                backgroundColor: 'rgba(102, 126, 234, 0.1)',
+                                fill: true,
+                                tension: 0.1
+                            },
+                            {
+                                label: 'Ruta Ideal',
+                                data: [initialConsumption, null, targetConsumption],
+                                borderColor: '#2ecc71',
+                                borderDash: [5, 5],
+                                fill: false
+                            }
+                        ]
+                    },
+                    options: {
+                        responsive: true,
+                        scales: {
+                            y: {
+                                beginAtZero: false,
+                                title: { display: true, text: 'Consumo Mensual (kWh)' }
+                            }
+                        }
+                    }
+                });
+            }
         }
 
         function renderMetricsGrid() {
