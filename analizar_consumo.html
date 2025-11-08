@@ -293,6 +293,7 @@
     </style>
 </head>
 <body>
+    <script src="https://cdn.jsdelivr.net/npm/arima@0.2.5/wasm/native-async.js"></script>
     <div class="container">
         <div class="header">
             <h1>⚡ Analizador Energético Avanzado</h1>
@@ -793,12 +794,16 @@
                 header: true,
                 skipEmptyLines: true,
                 comments: '#',
-                complete: function(results) {
-                    setTimeout(() => {
-                        procesarDatos(results.data);
+                complete: async function(results) {
+                    try {
+                        await procesarDatos(results.data);
+                    } catch (e) {
+                        console.error("Error processing data:", e);
+                        alert("An error occurred during data processing. Check the console for details.");
+                    } finally {
                         document.getElementById('loading').style.display = 'none';
                         document.getElementById('dashboard').style.display = 'block';
-                    }, 500);
+                    }
                 },
                 error: function(error) {
                     alert('Error: ' + error.message);
@@ -1145,13 +1150,28 @@
             analyzedData.deteccionAnomalias = componentes.residuales;
             analyzedData.occupancy = estimateOccupancy(datosLimpios);
             analyzedData.acf = calcularACF(potencias, 48); // Autocorrelación para 48 retardos (asumiendo datos horarios)
-            analyzedData.fft = calcularFFT(potencias.slice(0, 1024)); // FFT sobre una muestra de datos
+
+            let potenciasParaFFT = potencias.slice(0, 1024);
+            if (potenciasParaFFT.length > 1) {
+                const powerOfTwoLen = Math.pow(2, Math.floor(Math.log2(potenciasParaFFT.length)));
+                potenciasParaFFT = potenciasParaFFT.slice(0, powerOfTwoLen);
+                analyzedData.fft = calcularFFT(potenciasParaFFT);
+            } else {
+                analyzedData.fft = [];
+            }
+
 
             renderizarDashboard();
             const anomalias = detectarAnomalias(analyzedData.datosLimpios);
-            const predicciones = predecirConsumo(analyzedData.datosLimpios);
+            const anomaliasIQR = detectarAnomaliasIQR(analyzedData.datosLimpios);
+            let predicciones = [];
+            try {
+                predicciones = await pronosticoARIMA(analyzedData.datosLimpios);
+            } catch (e) {
+                console.error("Error running ARIMA forecast:", e);
+            }
             const clusters = clusterizarElectrodomesticos(analyzedData.picos);
-            renderizarAnalisisPredictivo(anomalias, predicciones, clusters);
+            renderizarAnalisisPredictivo(anomalias, predicciones, clusters, anomaliasIQR);
         }
 
         function refrescarAnalisisDeCostos() {
@@ -1178,6 +1198,17 @@
                 const zScore = (d.power - promedio) / desviacionEstandar;
                 return Math.abs(zScore) > umbral;
             });
+        }
+
+        function detectarAnomaliasIQR(datos) {
+            const potencias = datos.map(d => d.power).sort((a, b) => a - b);
+            const q1 = potencias[Math.floor(potencias.length * 0.25)];
+            const q3 = potencias[Math.floor(potencias.length * 0.75)];
+            const iqr = q3 - q1;
+            const limiteSuperior = q3 + 1.5 * iqr;
+            const limiteInferior = q1 - 1.5 * iqr;
+
+            return datos.filter(d => d.power > limiteSuperior || d.power < limiteInferior);
         }
 
         function renderNeighborComparison() {
@@ -2510,7 +2541,7 @@ function exportarAExcel() {
     XLSX.writeFile(wb, `Datos_Energeticos_${new Date().toISOString().slice(0,10)}.xlsx`);
 }
 
-    function renderizarAnalisisPredictivo(anomalias, predicciones, clusters) {
+    function renderizarAnalisisPredictivo(anomalias, predicciones, clusters, anomaliasIQR) {
         const container = document.getElementById('predictiveAnalysis');
         if (!container) return; // Exit if the container doesn't exist
 
@@ -2532,7 +2563,24 @@ function exportarAExcel() {
         }
 
         html += '<hr style="margin: 20px 0;">';
-        html += '<h4>Forecasting (Modelo de Descomposición Estacional)</h4>';
+
+        html += '<h4>Detección de Anomalías (IQR)</h4>';
+        if (anomaliasIQR && anomaliasIQR.length > 0) {
+            html += '<p>Se detectaron los siguientes consumos anormales (IQR):</p>';
+            html += '<ul class="insights-list">';
+            anomaliasIQR.slice(0, 5).forEach(a => {
+                html += `<li class="insight-item">
+                    <strong>Fecha:</strong> ${a.time.toLocaleString('es-MX')} <br>
+                    <strong>Consumo:</strong> ${a.power.toFixed(0)} W
+                </li>`;
+            });
+            html += '</ul>';
+        } else {
+            html += '<p>✓ No se detectaron anomalías significativas con IQR.</p>';
+        }
+
+        html += '<hr style="margin: 20px 0;">';
+        html += '<h4>Forecasting (Modelo ARIMA)</h4>';
         html += '<p>Predicción del consumo promedio diario para los próximos 30 días:</p>';
         html += '<div class="chart-container"><canvas id="predictionChartAdvanced"></canvas></div>';
 
@@ -2588,62 +2636,213 @@ function exportarAExcel() {
         });
     }
 
-    function predecirConsumo(datos) {
-        // Seasonal Decomposition
-        const seasonalPeriod = 24 * 60; // Assuming data is per minute
-        const seasonalAverages = Array.from({ length: seasonalPeriod }, (_, i) => {
-            const seasonalData = datos.filter((_, j) => j % seasonalPeriod === i);
-            return seasonalData.reduce((sum, d) => sum + d.power, 0) / seasonalData.length;
-        });
-
-        const deseasonalized = datos.map((d, i) => d.power - seasonalAverages[i % seasonalPeriod]);
-
-        // Linear regression on deseasonalized data
-        const n = deseasonalized.length;
-        let sumX = 0, sumY = 0, sumXY = 0, sumX2 = 0;
-        deseasonalized.forEach((y, i) => {
-            sumX += i;
-            sumY += y;
-            sumXY += i * y;
-            sumX2 += i * i;
-        });
-
-        const pendiente = (n * sumXY - sumX * sumY) / (n * sumX2 - sumX * sumX);
-        const intercepcion = (sumY - pendiente * sumX) / n;
-
-        const predicciones = [];
-        for (let i = 0; i < 30 * 24 * 60; i++) { // Predict for 30 days (assuming per-minute data)
-            const trend = pendiente * (n + i) + intercepcion;
-            const seasonal = seasonalAverages[(n + i) % seasonalPeriod];
-            predicciones.push(trend + seasonal);
+    function loadARIMA(m) {
+        function uintify (arr) {
+            return new Uint8Array(Float64Array.from(arr).buffer)
         }
 
-        // Return daily averages for the next 30 days
-        const dailyPredictions = [];
-        for (let i = 0; i < 30; i++) {
-            const dayData = predicciones.slice(i * 24 * 60, (i + 1) * 24 * 60);
-            dailyPredictions.push(dayData.reduce((sum, p) => sum + p, 0) / dayData.length);
+        function flat (arr) {
+            return [].concat.apply([], arr)
         }
-        return dailyPredictions;
+
+        function transpose (arr) {
+            return arr[0].map((x, i) => arr.map(x => x[i]))
+        }
+
+        function prepare (arr) {
+            const farr = flat(arr)
+            for (let i = 0; i < farr.length - 2; i++) {
+                if (isNaN(farr[i + 1])) {
+                    farr[i + 1] = farr[i]
+                }
+            }
+            return farr
+        }
+
+        const defaults = {
+            method: 0,
+            optimizer: 6,
+            s: 0,
+            verbose: true,
+            transpose: false,
+            auto: false,
+            approximation: 1,
+            search: 1
+        }
+
+        const params = {
+            p: 1,
+            d: 0,
+            q: 1,
+            P: 0,
+            D: 0,
+            Q: 0
+        }
+
+        const paramsAuto = {
+            p: 5,
+            d: 2,
+            q: 5,
+            P: 2,
+            D: 1,
+            Q: 2
+        }
+
+        const _fit_sarimax = m.cwrap('fit_sarimax', 'number', ['array', 'array', 'number', 'number', 'number', 'number', 'number', 'number', 'number', 'number', 'number', 'number', 'number', 'boolean'])
+        const _predict_sarimax = m.cwrap('predict_sarimax', 'number', ['number', 'array', 'array', 'array', 'number'])
+        const _fit_autoarima = m.cwrap('fit_autoarima', 'number', ['array', 'array', 'number', 'number', 'number', 'number', 'number', 'number', 'number', 'number', 'number', 'number', 'number', 'number', 'number', 'boolean'])
+        const _predict_autoarima = m.cwrap('predict_autoarima', 'number', ['number', 'array', 'array', 'array', 'number'])
+
+        function getResults (addr, l) {
+            const res = [[], []]
+            for (let i = 0; i < l * 2; i++) {
+                res[i < l ? 0 : 1].push(m.HEAPF64[addr / Float64Array.BYTES_PER_ELEMENT + i])
+            }
+            return res
+        }
+
+        function ARIMA () {
+            if (!(this instanceof ARIMA)) {
+                console.warn('Calling ARIMA as a function will be deprecated in the future')
+                return (new ARIMA(arguments[2])).train(arguments[0]).predict(arguments[1])
+            }
+            const opts = arguments[0]
+            const o = Object.assign({}, defaults, opts.auto ? paramsAuto : params, opts)
+            if (Math.min(o.method, o.optimizer, o.p, o.d, o.q, o.P, o.D, o.Q, o.s) < 0) {
+                throw new Error('Model parameter can\'t be negative')
+            }
+            if ((o.P + o.D + o.Q) === 0) {
+                o.s = 0
+            } else if (o.s === 0) {
+                o.P = o.D = o.Q = 0
+            }
+            this.options = o
+        }
+
+        ARIMA.prototype.train = function (ts, exog = []) {
+            const o = this.options
+            if (o.transpose && Array.isArray(exog[0])) {
+                exog = transpose(exog)
+            }
+            this.ts = uintify(prepare(ts))
+            this.exog = uintify(prepare(exog))
+            this.lin = ts.length
+            this.nexog = exog.length > 0 ? (Array.isArray(exog[0]) ? exog.length : 1) : 0
+            this.model = o.auto
+                ? _fit_autoarima(
+                    this.ts, this.exog,
+                    o.p, o.d, o.q,
+                    o.P, o.D, o.Q, o.s,
+                    this.nexog,
+                    this.lin,
+                    o.method,
+                    o.optimizer,
+                    o.approximation,
+                    o.search,
+                    o.verbose
+                )
+                : _fit_sarimax(
+                    this.ts, this.exog,
+                    o.p, o.d, o.q,
+                    o.P, o.D, o.Q, o.s,
+                    this.nexog,
+                    this.lin,
+                    o.method,
+                    o.optimizer,
+                    o.verbose
+                )
+            return this
+        }
+
+        ARIMA.prototype.fit = function (...a) {
+            return this.train(...a)
+        }
+
+        ARIMA.prototype.predict = function (l, exog = []) {
+            const o = this.options
+            if (o.transpose && Array.isArray(exog[0])) {
+                exog = transpose(exog)
+            }
+            const addr = o.auto
+                ? _predict_autoarima(
+                    this.model,
+                    this.ts,
+                    this.exog, // old
+                    uintify(prepare(exog)), // new
+                    l
+                )
+                : _predict_sarimax(
+                    this.model,
+                    this.ts,
+                    this.exog, // old
+                    uintify(prepare(exog)), // new
+                    l
+                )
+            return getResults(addr, l)
+        }
+
+        return ARIMA
     }
 
-    function clusterizarElectrodomesticos(picos) {
-        if (picos.length < 3) return [];
-        const k = 3; // 3 clusters: bajo, medio, alto consumo
+    async function pronosticoARIMA(datos) {
+        const response = await fetch('https://cdn.jsdelivr.net/npm/arima@0.2.5/wasm/native.wasm');
+        const buffer = await response.arrayBuffer();
+        const module = await Module({ wasmBinary: buffer });
+        const ARIMA = loadARIMA(module);
+
+        const potencias = datos.map(d => d.power);
+        const hourlyData = [];
+        let currentHour = new Date(datos[0].time).getHours();
+        let sum = 0;
+        let count = 0;
+        for (const dato of datos) {
+            const hour = new Date(dato.time).getHours();
+            if (hour === currentHour) {
+                sum += dato.power;
+                count++;
+            } else {
+                hourlyData.push(sum / count);
+                currentHour = hour;
+                sum = dato.power;
+                count = 1;
+            }
+        }
+        hourlyData.push(sum / count);
+
+        const ts = hourlyData.slice(0, 100);
+        const arima = new ARIMA({ auto: true, verbose: false }).train(ts);
+        const [pred, errors] = arima.predict(30);
+        return pred;
+    }
+
+    function clusterizarElectrodomesticos(picos, k = 3, maxIteraciones = 100) {
+        if (picos.length < k) return [];
+
+        // Inicializar centroides aleatoriamente
         let centroides = picos.slice(0, k).map(p => p.diff);
         let clusters = [];
+        let iteracion = 0;
+        let convergencia = false;
 
-        for (let i = 0; i < 10; i++) { // 10 iteraciones
-            clusters = Array.from({length: k}, () => []);
+        while (iteracion < maxIteraciones && !convergencia) {
+            // Asignar picos a clusters
+            clusters = Array.from({ length: k }, () => []);
             picos.forEach(pico => {
                 const distancias = centroides.map(c => Math.abs(c - pico.diff));
                 const clusterIdx = distancias.indexOf(Math.min(...distancias));
                 clusters[clusterIdx].push(pico);
             });
-            centroides = clusters.map(cluster => {
+
+            // Recalcular centroides
+            const nuevosCentroides = clusters.map(cluster => {
                 if (cluster.length === 0) return 0;
                 return cluster.reduce((sum, p) => sum + p.diff, 0) / cluster.length;
             });
+
+            // Comprobar convergencia
+            convergencia = centroides.every((c, i) => Math.abs(c - nuevosCentroides[i]) < 0.1);
+            centroides = nuevosCentroides;
+            iteracion++;
         }
         return clusters;
     }
