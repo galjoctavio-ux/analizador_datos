@@ -1,0 +1,1219 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Analizador Energético Avanzado</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container { max-width: 1600px; margin: 0 auto; }
+        
+        .header {
+            background: white;
+            padding: 30px;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            margin-bottom: 20px;
+            text-align: center;
+        }
+        
+        .header h1 { color: #667eea; font-size: 2.5em; margin-bottom: 10px; }
+        
+        .upload-section {
+            background: white;
+            padding: 30px;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            margin-bottom: 20px;
+            text-align: center;
+        }
+        
+        .file-input-wrapper { position: relative; display: inline-block; margin: 20px 0; }
+        .file-input-wrapper input[type=file] { display: none; }
+        
+        .file-input-label {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 15px 40px;
+            border-radius: 50px;
+            cursor: pointer;
+            font-size: 1.1em;
+            font-weight: bold;
+            transition: transform 0.2s;
+            display: inline-block;
+        }
+        
+        .file-input-label:hover { transform: scale(1.05); }
+        
+        .config-section {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            margin-top: 20px;
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+        }
+        
+        .config-item { display: flex; flex-direction: column; }
+        .config-item label { font-weight: bold; margin-bottom: 5px; color: #555; }
+        .config-item input, .config-item select {
+            padding: 10px;
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            font-size: 1em;
+        }
+        
+        .dashboard { display: none; }
+        
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+        
+        .metric-card {
+            background: white;
+            padding: 25px;
+            border-radius: 15px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+            transition: transform 0.2s;
+        }
+        
+        .metric-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 25px rgba(0,0,0,0.15);
+        }
+        
+        .metric-icon { font-size: 2.5em; margin-bottom: 10px; }
+        .metric-value { font-size: 2em; font-weight: bold; color: #667eea; margin: 10px 0; }
+        .metric-label { color: #666; font-size: 0.9em; }
+        .metric-detail { color: #999; font-size: 0.85em; margin-top: 10px; padding-top: 10px; border-top: 1px solid #eee; }
+        
+        .alert-badge {
+            display: inline-block;
+            padding: 5px 12px;
+            border-radius: 20px;
+            font-size: 0.8em;
+            font-weight: bold;
+            margin-top: 10px;
+        }
+        
+        .alert-danger { background: #fee; color: #c33; }
+        .alert-warning { background: #ffc; color: #c93; }
+        .alert-success { background: #efe; color: #3c3; }
+        .alert-info { background: #e3f2fd; color: #1976d2; }
+        
+        .chart-container {
+            background: white;
+            padding: 25px;
+            border-radius: 15px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        
+        .chart-container h3 {
+            color: #333;
+            margin-bottom: 20px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #667eea;
+        }
+        
+        .chart-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(500px, 1fr));
+            gap: 20px;
+        }
+        
+        .insights-section {
+            background: white;
+            padding: 25px;
+            border-radius: 15px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        
+        .insight-item {
+            padding: 15px;
+            margin: 10px 0;
+            border-left: 4px solid #667eea;
+            background: #f8f9ff;
+            border-radius: 8px;
+        }
+        
+        .insight-title { font-weight: bold; color: #667eea; font-size: 1.1em; margin-bottom: 5px; }
+        .insight-description { color: #666; line-height: 1.6; }
+        .insight-recommendation { color: #2ecc71; margin-top: 10px; font-weight: bold; }
+        
+        .appliances-list { background: white; padding: 25px; border-radius: 15px; box-shadow: 0 5px 15px rgba(0,0,0,0.1); }
+        
+        .appliance-item {
+            padding: 15px;
+            margin: 10px 0;
+            border-left: 4px solid #667eea;
+            background: #f8f9ff;
+            border-radius: 8px;
+        }
+        
+        .appliance-time { font-weight: bold; color: #667eea; }
+        .appliance-power { font-size: 1.2em; color: #333; margin: 5px 0; }
+        .appliance-type { color: #666; font-style: italic; }
+        
+        .loading { text-align: center; padding: 40px; color: #667eea; font-size: 1.2em; }
+        
+        .tabs { display: flex; gap: 10px; margin-bottom: 20px; flex-wrap: wrap; }
+        
+        .tab {
+            background: white;
+            padding: 15px 30px;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: all 0.3s;
+            font-weight: bold;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+        
+        .tab:hover { background: #f0f0f0; }
+        .tab.active { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+        
+        .comparison-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+        
+        .comparison-table th {
+            background: #667eea;
+            color: white;
+            padding: 12px;
+            text-align: left;
+        }
+        
+        .comparison-table td {
+            padding: 12px;
+            border-bottom: 1px solid #ddd;
+        }
+        
+        .comparison-table tr:hover { background: #f5f5f5; }
+        
+        .heatmap-container {
+            display: grid;
+            grid-template-columns: repeat(24, 1fr);
+            gap: 2px;
+            margin-top: 20px;
+        }
+        
+        .heatmap-cell {
+            aspect-ratio: 1;
+            border-radius: 4px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.7em;
+            color: white;
+            font-weight: bold;
+        }
+        
+        .heatmap-label {
+            grid-column: 1 / -1;
+            text-align: center;
+            font-weight: bold;
+            margin: 10px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>⚡ Analizador Energético Avanzado</h1>
+            <p>Inteligencia artificial para optimizar tu consumo eléctrico</p>
+        </div>
+        
+        <div class="upload-section">
+            <h2>📊 Cargar datos de InfluxDB</h2>
+            <p>Análisis profundo con machine learning y reconocimiento de patrones</p>
+            
+            <div class="file-input-wrapper">
+                <input type="file" id="csvFile" accept=".csv" />
+                <label for="csvFile" class="file-input-label">📁 Seleccionar archivo CSV</label>
+            </div>
+            
+            <div class="config-section">
+                <div class="config-item">
+                    <label>💰 Precio kWh (MXN)</label>
+                    <input type="number" id="precioKwh" value="2.5" step="0.1" />
+                </div>
+                <div class="config-item">
+                    <label>⚠️ Umbral pico (W)</label>
+                    <input type="number" id="umbralPico" value="300" step="50" />
+                </div>
+                <div class="config-item">
+                    <label>🌙 Base esperada (W)</label>
+                    <input type="number" id="consumoBaseEsperado" value="100" step="10" />
+                </div>
+                <div class="config-item">
+                    <label>📊 Tarifa CFE</label>
+                    <select id="tarifaCFE">
+                        <option value="domestica">Doméstica</option>
+                        <option value="dac">DAC (Alto Consumo)</option>
+                    </select>
+                </div>
+            </div>
+            
+            <div id="loading" class="loading" style="display:none;">⏳ Analizando datos con IA...</div>
+        </div>
+        
+        <div id="dashboard" class="dashboard">
+            <div class="tabs">
+                <div class="tab active" onclick="switchTab('resumen')">📊 Resumen Ejecutivo</div>
+                <div class="tab" onclick="switchTab('insights')">🧠 Insights IA</div>
+                <div class="tab" onclick="switchTab('patrones')">📈 Patrones Avanzados</div>
+                <div class="tab" onclick="switchTab('electrodomesticos')">🔌 Electrodomésticos</div>
+                <div class="tab" onclick="switchTab('comparativas')">📊 Comparativas</div>
+                <div class="tab" onclick="switchTab('predicciones')">🔮 Predicciones</div>
+            </div>
+            
+            <div id="tab-resumen" class="tab-content active">
+                <div class="metrics-grid" id="metricsGrid"></div>
+                <div class="chart-container">
+                    <h3>📈 Línea de tiempo completa con eventos detectados</h3>
+                    <canvas id="mainChart"></canvas>
+                </div>
+            </div>
+            
+            <div id="tab-insights" class="tab-content">
+                <div class="insights-section">
+                    <h3>🧠 Análisis Inteligente de Consumo</h3>
+                    <div id="insightsList"></div>
+                </div>
+                <div class="chart-grid">
+                    <div class="chart-container">
+                        <h3>🎯 Distribución de consumo</h3>
+                        <canvas id="distributionChart"></canvas>
+                    </div>
+                    <div class="chart-container">
+                        <h3>📊 Factor de potencia en tiempo real</h3>
+                        <canvas id="powerFactorTimeChart"></canvas>
+                    </div>
+                </div>
+            </div>
+            
+            <div id="tab-patrones" class="tab-content">
+                <div class="chart-container">
+                    <h3>🔥 Mapa de calor: Consumo por hora y día</h3>
+                    <div id="heatmapContainer"></div>
+                </div>
+                <div class="chart-grid">
+                    <div class="chart-container">
+                        <h3>🕐 Patrón circadiano (24h)</h3>
+                        <canvas id="hourlyChart"></canvas>
+                    </div>
+                    <div class="chart-container">
+                        <h3>📅 Patrón semanal</h3>
+                        <canvas id="weeklyChart"></canvas>
+                    </div>
+                </div>
+                <div class="chart-container">
+                    <h3>📊 Variabilidad del consumo</h3>
+                    <canvas id="variabilityChart"></canvas>
+                </div>
+            </div>
+            
+            <div id="tab-electrodomesticos" class="tab-content">
+                <div class="metrics-grid" id="appliancesMetrics"></div>
+                <div class="appliances-list">
+                    <h3>🔌 Top 30 eventos de encendido detectados</h3>
+                    <div id="appliancesList"></div>
+                </div>
+            </div>
+            
+            <div id="tab-comparativas" class="tab-content">
+                <div class="insights-section">
+                    <h3>📊 Benchmarking y Comparativas</h3>
+                    <div id="comparativesList"></div>
+                </div>
+                <div class="chart-container">
+                    <h3>📈 Tu hogar vs. Promedio nacional</h3>
+                    <canvas id="benchmarkChart"></canvas>
+                </div>
+            </div>
+            
+            <div id="tab-predicciones" class="tab-content">
+                <div class="metrics-grid" id="predictionsMetrics"></div>
+                <div class="chart-container">
+                    <h3>🔮 Proyección de consumo y costo (30 días)</h3>
+                    <canvas id="predictionChart"></canvas>
+                </div>
+                <div class="insights-section">
+                    <h3>💡 Recomendaciones personalizadas</h3>
+                    <div id="recommendationsList"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let chartInstances = {};
+        let analyzedData = null;
+        
+        function switchTab(tabName) {
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+            event.target.classList.add('active');
+            document.getElementById(`tab-${tabName}`).classList.add('active');
+        }
+        
+        function clasificarAparato(watts) {
+            watts = Math.round(watts);
+            if (watts > 2500) return { tipo: '🚿 Regadera eléctrica / HVAC', color: '#e74c3c', categoria: 'Alto consumo' };
+            if (watts > 1500) return { tipo: '🍳 Horno / Parrilla inducción', color: '#e67e22', categoria: 'Alto consumo' };
+            if (watts > 800) return { tipo: '📱 Microondas / Cafetera', color: '#f39c12', categoria: 'Medio consumo' };
+            if (watts > 300) return { tipo: '👕 Lavadora / Motor', color: '#3498db', categoria: 'Medio consumo' };
+            if (watts > 100) return { tipo: '❄️ Refrigerador / Ventilador', color: '#1abc9c', categoria: 'Bajo consumo' };
+            return { tipo: '💻 Electrónica / Iluminación', color: '#95a5a6', categoria: 'Bajo consumo' };
+        }
+        
+        document.getElementById('csvFile').addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+            
+            document.getElementById('loading').style.display = 'block';
+            
+            Papa.parse(file, {
+                header: true,
+                skipEmptyLines: true,
+                comments: '#',
+                complete: function(results) {
+                    setTimeout(() => {
+                        procesarDatos(results.data);
+                        document.getElementById('loading').style.display = 'none';
+                        document.getElementById('dashboard').style.display = 'block';
+                    }, 500);
+                },
+                error: function(error) {
+                    alert('Error: ' + error.message);
+                    document.getElementById('loading').style.display = 'none';
+                }
+            });
+        });
+        
+        function procesarDatos(data) {
+            const precioKwh = parseFloat(document.getElementById('precioKwh').value);
+            const umbralPico = parseFloat(document.getElementById('umbralPico').value);
+            const consumoBaseEsperado = parseFloat(document.getElementById('consumoBaseEsperado').value);
+            const tarifaCFE = document.getElementById('tarifaCFE').value;
+            
+            const datosLimpios = data
+                .filter(row => row.time && row.power && row.power_factor)
+                .map(row => ({
+                    time: new Date(row.time),
+                    power: parseFloat(row.power),
+                    powerFactor: parseFloat(row.power_factor)
+                }))
+                .filter(row => !isNaN(row.power) && !isNaN(row.powerFactor))
+                .sort((a, b) => a.time - b.time);
+            
+            if (datosLimpios.length === 0) {
+                alert('No se encontraron datos válidos');
+                return;
+            }
+            
+            // Análisis estadístico avanzado
+            const potencias = datosLimpios.map(d => d.power);
+            const consumoPromedio = potencias.reduce((a, b) => a + b, 0) / potencias.length;
+            const consumoMaximo = Math.max(...potencias);
+            const consumoMinimo = Math.min(...potencias);
+            
+            // Desviación estándar
+            const varianza = potencias.reduce((sum, val) => sum + Math.pow(val - consumoPromedio, 2), 0) / potencias.length;
+            const desviacionEstandar = Math.sqrt(varianza);
+            
+            // Percentiles
+            const potenciasOrdenadas = [...potencias].sort((a, b) => a - b);
+            const p25 = potenciasOrdenadas[Math.floor(potencias.length * 0.25)];
+            const p50 = potenciasOrdenadas[Math.floor(potencias.length * 0.50)];
+            const p75 = potenciasOrdenadas[Math.floor(potencias.length * 0.75)];
+            const p95 = potenciasOrdenadas[Math.floor(potencias.length * 0.95)];
+            
+            // Consumo base
+            const datosNoche = datosLimpios.filter(d => {
+                const hora = d.time.getHours();
+                return hora >= 2 && hora <= 4;
+            });
+            const consumoBase = datosNoche.length > 0 
+                ? datosNoche.reduce((a, b) => a + b.power, 0) / datosNoche.length
+                : p25;
+            
+            // Factor de potencia
+            const fpDatos = datosLimpios.filter(d => d.power > 20);
+            const factorPotenciaPromedio = fpDatos.reduce((a, b) => a + b.powerFactor, 0) / fpDatos.length;
+            const fpMinimo = Math.min(...fpDatos.map(d => d.powerFactor));
+            
+            // Detección de picos
+            const picos = [];
+            for (let i = 1; i < datosLimpios.length; i++) {
+                const diff = datosLimpios[i].power - datosLimpios[i-1].power;
+                if (diff > umbralPico) {
+                    picos.push({
+                        time: datosLimpios[i].time,
+                        power: datosLimpios[i].power,
+                        diff: diff,
+                        clasificacion: clasificarAparato(diff)
+                    });
+                }
+            }
+            picos.sort((a, b) => b.diff - a.diff);
+            
+            // Conteo por categoría
+            const categorias = {};
+            picos.forEach(p => {
+                const cat = p.clasificacion.categoria;
+                categorias[cat] = (categorias[cat] || 0) + 1;
+            });
+            
+            // Patrón por hora (con desviación)
+            const consumoPorHora = Array(24).fill(0).map(() => []);
+            datosLimpios.forEach(d => {
+                consumoPorHora[d.time.getHours()].push(d.power);
+            });
+            const promedioPorHora = consumoPorHora.map(arr => 
+                arr.length > 0 ? arr.reduce((a, b) => a + b, 0) / arr.length : 0
+            );
+            const desviacionPorHora = consumoPorHora.map(arr => {
+                if (arr.length < 2) return 0;
+                const avg = arr.reduce((a, b) => a + b, 0) / arr.length;
+                const variance = arr.reduce((sum, val) => sum + Math.pow(val - avg, 2), 0) / arr.length;
+                return Math.sqrt(variance);
+            });
+            
+            // Patrón por día de la semana
+            const diasSemana = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
+            const consumoPorDia = Array(7).fill(0).map(() => []);
+            datosLimpios.forEach(d => {
+                consumoPorDia[d.time.getDay()].push(d.power);
+            });
+            const promedioPorDia = consumoPorDia.map(arr => 
+                arr.length > 0 ? arr.reduce((a, b) => a + b, 0) / arr.length : 0
+            );
+            
+            // Mapa de calor (día x hora)
+            const mapaCalor = Array(7).fill(0).map(() => Array(24).fill(0).map(() => []));
+            datosLimpios.forEach(d => {
+                mapaCalor[d.time.getDay()][d.time.getHours()].push(d.power);
+            });
+            const mapaCalorPromedio = mapaCalor.map(dia => 
+                dia.map(hora => hora.length > 0 ? hora.reduce((a,b) => a+b, 0) / hora.length : 0)
+            );
+            
+            // Costos
+            const diasDatos = (datosLimpios[datosLimpios.length - 1].time - datosLimpios[0].time) / (1000 * 60 * 60 * 24);
+            const kwhTotal = (consumoPromedio * 24 * diasDatos) / 1000;
+            const costoTotal = kwhTotal * precioKwh;
+            const costoMes = (consumoPromedio * 24 * 30.5) / 1000 * precioKwh;
+            const costoFantasmaMes = (consumoBase * 24 * 30.5) / 1000 * precioKwh;
+            const ahorroMensual = ((consumoBase - consumoBaseEsperado) * 24 * 30.5) / 1000 * precioKwh;
+            
+            // Proyecciones
+            const tendencia = calcularTendencia(datosLimpios);
+            const consumoProyectado30d = consumoPromedio * (1 + tendencia * 30);
+            const costoProyectado30d = (consumoProyectado30d * 24 * 30) / 1000 * precioKwh;
+            
+            // Benchmarking (datos aproximados de México)
+            const promedioNacionalMensual = 300; // kWh
+            const tuConsumoMensual = (consumoPromedio * 24 * 30.5) / 1000;
+            const comparativoNacional = ((tuConsumoMensual - promedioNacionalMensual) / promedioNacionalMensual) * 100;
+            
+            analyzedData = {
+                datosLimpios, consumoPromedio, consumoMaximo, consumoMinimo,
+                desviacionEstandar, p25, p50, p75, p95,
+                consumoBase, factorPotenciaPromedio, fpMinimo,
+                picos, categorias,
+                promedioPorHora, desviacionPorHora,
+                promedioPorDia, diasSemana,
+                mapaCalorPromedio,
+                diasDatos, kwhTotal, costoTotal, costoMes,
+                costoFantasmaMes, ahorroMensual,
+                tendencia, consumoProyectado30d, costoProyectado30d,
+                tuConsumoMensual, promedioNacionalMensual, comparativoNacional,
+                precioKwh, tarifaCFE
+            };
+            
+            renderizarDashboard();
+        }
+        
+        function calcularTendencia(datos) {
+            const n = Math.min(datos.length, 1000);
+            let sumX = 0, sumY = 0, sumXY = 0, sumX2 = 0;
+            
+            for (let i = 0; i < n; i++) {
+                sumX += i;
+                sumY += datos[i].power;
+                sumXY += i * datos[i].power;
+                sumX2 += i * i;
+            }
+            
+            const pendiente = (n * sumXY - sumX * sumY) / (n * sumX2 - sumX * sumX);
+            return pendiente / datos[0].power;
+        }
+        
+        function renderizarDashboard() {
+            renderMetricsGrid();
+            renderInsights();
+            renderMainChart();
+            renderDistributionChart();
+            renderPowerFactorTimeChart();
+            renderHeatmap();
+            renderHourlyChart();
+            renderWeeklyChart();
+            renderVariabilityChart();
+            renderAppliancesMetrics();
+            renderAppliancesList();
+            renderComparatives();
+            renderBenchmarkChart();
+            renderPredictionsMetrics();
+            renderPredictionChart();
+            renderRecommendations();
+        }
+        
+        function renderMetricsGrid() {
+            const d = analyzedData;
+            document.getElementById('metricsGrid').innerHTML = `
+                <div class="metric-card">
+                    <div class="metric-icon">⚡</div>
+                    <div class="metric-label">Consumo Promedio</div>
+                    <div class="metric-value">${d.consumoPromedio.toFixed(0)} W</div>
+                    <div class="metric-detail">
+                        Mediana: ${d.p50.toFixed(0)} W<br>
+                        Desv. Std: ±${d.desviacionEstandar.toFixed(0)} W
+                    </div>
+                </div>
+                
+                <div class="metric-card">
+                    <div class="metric-icon">💰</div>
+                    <div class="metric-label">Costo Mensual</div>
+                    <div class="metric-value">$${d.costoMes.toFixed(2)}</div>
+                    <div class="metric-detail">
+                        ${d.diasDatos.toFixed(1)} días: $${d.costoTotal.toFixed(2)}<br>
+                        ${d.tuConsumoMensual.toFixed(0)} kWh/mes
+                    </div>
+                </div>
+                
+                <div class="metric-card">
+                    <div class="metric-icon">🌙</div>
+                    <div class="metric-label">Consumo Fantasma</div>
+                    <div class="metric-value">${d.consumoBase.toFixed(0)} W</div>
+                    <div class="metric-detail">
+                        $${d.costoFantasmaMes.toFixed(2)}/mes
+                        ${d.consumoBase > 150 ? '<br><span class="alert-badge alert-danger">⚠️ Muy alto</span>' : 
+                          d.consumoBase > 100 ? '<br><span class="alert-badge alert-warning">⚠️ Alto</span>' : 
+                          '<br><span class="alert-badge alert-success">✓ Óptimo</span>'}
+                    </div>
+                </div>
+                
+                <div class="metric-card">
+                    <div class="metric-icon">📊</div>
+                    <div class="metric-label">Factor de Potencia</div>
+                    <div class="metric-value">${d.factorPotenciaPromedio.toFixed(3)}</div>
+                    <div class="metric-detail">
+                        Mínimo: ${d.fpMinimo.toFixed(3)}<br>
+                        ${d.factorPotenciaPromedio < 0.8 ? '<span class="alert-badge alert-danger">⚠️ Muy bajo</span>' : 
+                          d.factorPotenciaPromedio < 0.9 ? '<span class="alert-badge alert-warning">⚠️ Regular</span>' : 
+                          '<span class="alert-badge alert-success">✓ Excelente</span>'}
+                    </div>
+                </div>
+                
+                <div class="metric-card">
+                    <div class="metric-icon">🎯</div>
+                    <div class="metric-label">Picos Detectados</div>
+                    <div class="metric-value">${d.picos.length}</div>
+                    <div class="metric-detail">
+                        Alto consumo: ${d.categorias['Alto consumo'] || 0}<br>
+                        Medio: ${d.categorias['Medio consumo'] || 0}<br>
+                        Bajo: ${d.categorias['Bajo consumo'] || 0}
+                    </div>
+                </div>
+                
+                <div class="metric-card">
+                    <div class="metric-icon">📈</div>
+                    <div class="metric-label">Tendencia</div>
+                    <div class="metric-value">${(d.tendencia * 100).toFixed(2)}%</div>
+                    <div class="metric-detail">
+                        ${d.tendencia > 0 ? '📈 Incrementando' : '📉 Disminuyendo'}<br>
+                        ${Math.abs(d.tendencia * 100).toFixed(2)}% por día
+                    </div>
+                </div>
+            `;
+        }
+        
+        function renderInsights() {
+            const d = analyzedData;
+            let insights = [];
+            
+            // Insight 1: Consumo fantasma
+            if (d.consumoBase > 150) {
+                insights.push({
+                    icon: '🌙',
+                    title: 'Consumo fantasma crítico detectado',
+                    description: `Tu hogar consume ${d.consumoBase.toFixed(0)}W cuando "no usas nada". Esto representa el ${((d.consumoBase/d.consumoPromedio)*100).toFixed(1)}% de tu consumo promedio y te cuesta ${d.costoFantasmaMes.toFixed(2)} MXN al mes.`,
+                    recommendation: `💡 Recomendación: Desconecta cargadores, apaga regletas, considera smart plugs. Ahorro potencial: ${d.ahorroMensual.toFixed(2)} MXN/mes`
+                });
+            }
+            
+            // Insight 2: Factor de potencia
+            if (d.factorPotenciaPromedio < 0.85) {
+                insights.push({
+                    icon: '⚠️',
+                    title: 'Equipos ineficientes detectados',
+                    description: `Tu factor de potencia promedio es ${d.factorPotenciaPromedio.toFixed(3)} (ideal >0.9). Esto indica equipos de mala calidad, cargadores genéricos o motores viejos que desperdician energía.`,
+                    recommendation: `💡 Recomendación: Reemplaza cargadores baratos, considera actualizar electrodomésticos viejos. Mejora potencial: 10-15% en eficiencia.`
+                });
+            }
+            
+            // Insight 3: Variabilidad
+            const cv = (d.desviacionEstandar / d.consumoPromedio) * 100;
+            if (cv > 50) {
+                insights.push({
+                    icon: '📊',
+                    title: 'Alta variabilidad en consumo',
+                    description: `Tu consumo varía significativamente (CV: ${cv.toFixed(1)}%). Esto sugiere uso irregular de electrodomésticos de alto consumo o picos frecuentes.`,
+                    recommendation: `💡 Recomendación: Programa electrodomésticos grandes en horarios valle, evita usar múltiples aparatos simultáneamente.`
+                });
+            }
+            
+            // Insight 4: Hora pico
+            const horaPico = d.promedioPorHora.indexOf(Math.max(...d.promedioPorHora));
+            const consumoHoraPico = d.promedioPorHora[horaPico];
+            if (consumoHoraPico > d.consumoPromedio * 1.5) {
+                insights.push({
+                    icon: '🕐',
+                    title: `Pico de consumo a las ${horaPico}:00 hrs`,
+                    description: `Entre las ${horaPico}:00-${horaPico+1}:00 tu consumo promedio es ${consumoHoraPico.toFixed(0)}W, un ${(((consumoHoraPico/d.consumoPromedio)-1)*100).toFixed(0)}% más alto que tu promedio diario.`,
+                    recommendation: `💡 Recomendación: Identifica qué aparatos usas a esta hora y considera reprogramarlos a horarios de menor consumo.`
+                });
+            }
+            
+            // Insight 5: Comparativo nacional
+            if (d.comparativoNacional > 20) {
+                insights.push({
+                    icon: '📊',
+                    title: 'Consumo por encima del promedio nacional',
+                    description: `Tu consumo mensual (${d.tuConsumoMensual.toFixed(0)} kWh) es ${Math.abs(d.comparativoNacional).toFixed(0)}% mayor que el promedio nacional mexicano (${d.promedioNacionalMensual} kWh/mes).`,
+                    recommendation: `💡 Recomendación: Revisa la sección de Electrodomésticos para identificar equipos que consumen más de lo normal.`
+                });
+            } else if (d.comparativoNacional < -20) {
+                insights.push({
+                    icon: '🌟',
+                    title: '¡Consumo eficiente!',
+                    description: `Felicidades, tu consumo está ${Math.abs(d.comparativoNacional).toFixed(0)}% por debajo del promedio nacional. Esto indica buenos hábitos de ahorro energético.`,
+                    recommendation: `💡 Sigue así: Mantén estos hábitos y comparte tus tips con familiares.`
+                });
+            }
+            
+            // Insight 6: Proyección
+            if (Math.abs(d.tendencia) > 0.01) {
+                const direccion = d.tendencia > 0 ? 'incrementará' : 'disminuirá';
+                insights.push({
+                    icon: '🔮',
+                    title: `Tu consumo ${direccion} en los próximos días`,
+                    description: `Basado en la tendencia actual (${(d.tendencia*100).toFixed(2)}%/día), se proyecta que en 30 días tu consumo será de ${d.consumoProyectado30d.toFixed(0)}W promedio, con un costo de ${d.costoProyectado30d.toFixed(2)} MXN.`,
+                    recommendation: d.tendencia > 0 ? 
+                        `⚠️ Alerta: Tu consumo está aumentando. Revisa qué ha cambiado recientemente (nuevo equipo, más uso de AC, etc.)` :
+                        `✅ Excelente: Tu consumo está bajando. ¡Sigue con esos buenos hábitos!`
+                });
+            }
+            
+            const html = insights.map(insight => `
+                <div class="insight-item">
+                    <div class="insight-title">${insight.icon} ${insight.title}</div>
+                    <div class="insight-description">${insight.description}</div>
+                    <div class="insight-recommendation">${insight.recommendation}</div>
+                </div>
+            `).join('');
+            
+            document.getElementById('insightsList').innerHTML = html || '<p>No hay insights críticos. Tu consumo parece normal.</p>';
+        }
+        
+        function renderMainChart() {
+            const d = analyzedData;
+            const ctx = document.getElementById('mainChart').getContext('2d');
+            if (chartInstances.main) chartInstances.main.destroy();
+            
+            const agrupado = {};
+            d.datosLimpios.forEach(dato => {
+                const key = dato.time.toISOString().slice(0, 13) + ':00:00';
+                if (!agrupado[key]) agrupado[key] = [];
+                agrupado[key].push(dato.power);
+            });
+            
+            const labels = Object.keys(agrupado).sort();
+            const valores = labels.map(k => agrupado[k].reduce((a,b) => a+b, 0) / agrupado[k].length);
+            
+            chartInstances.main = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels.map(l => new Date(l).toLocaleString('es-MX', { month: 'short', day: 'numeric', hour: '2-digit' })),
+                    datasets: [{
+                        label: 'Consumo Real (W)',
+                        data: valores,
+                        borderColor: '#667eea',
+                        backgroundColor: 'rgba(102, 126, 234, 0.1)',
+                        fill: true,
+                        tension: 0.4
+                    }, {
+                        label: 'Consumo Base',
+                        data: Array(labels.length).fill(d.consumoBase),
+                        borderColor: '#e74c3c',
+                        borderDash: [5, 5],
+                        fill: false,
+                        pointRadius: 0
+                    }, {
+                        label: 'Promedio',
+                        data: Array(labels.length).fill(d.consumoPromedio),
+                        borderColor: '#2ecc71',
+                        borderDash: [2, 2],
+                        fill: false,
+                        pointRadius: 0
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    plugins: { legend: { display: true } },
+                    scales: { y: { beginAtZero: true, title: { display: true, text: 'Watts' } } }
+                }
+            });
+        }
+        
+        function renderDistributionChart() {
+            const d = analyzedData;
+            const ctx = document.getElementById('distributionChart').getContext('2d');
+            if (chartInstances.dist) chartInstances.dist.destroy();
+            
+            chartInstances.dist = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: ['Mínimo', 'P25', 'Mediana', 'Promedio', 'P75', 'P95', 'Máximo'],
+                    datasets: [{
+                        label: 'Distribución (W)',
+                        data: [d.consumoMinimo, d.p25, d.p50, d.consumoPromedio, d.p75, d.p95, d.consumoMaximo],
+                        backgroundColor: ['#95a5a6', '#3498db', '#1abc9c', '#2ecc71', '#f39c12', '#e67e22', '#e74c3c']
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    plugins: { legend: { display: false } },
+                    scales: { y: { beginAtZero: true } }
+                }
+            });
+        }
+        
+        function renderPowerFactorTimeChart() {
+            const d = analyzedData;
+            const ctx = document.getElementById('powerFactorTimeChart').getContext('2d');
+            if (chartInstances.pftime) chartInstances.pftime.destroy();
+            
+            const muestras = d.datosLimpios.filter((_, i) => i % 100 === 0).slice(0, 100);
+            
+            chartInstances.pftime = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: muestras.map(m => m.time.toLocaleString('es-MX', { month: 'short', day: 'numeric', hour: '2-digit' })),
+                    datasets: [{
+                        label: 'Factor de Potencia',
+                        data: muestras.map(m => m.powerFactor),
+                        borderColor: '#9b59b6',
+                        backgroundColor: 'rgba(155, 89, 182, 0.1)',
+                        fill: true,
+                        tension: 0.4
+                    }, {
+                        label: 'Umbral óptimo (0.9)',
+                        data: Array(muestras.length).fill(0.9),
+                        borderColor: '#2ecc71',
+                        borderDash: [5, 5],
+                        pointRadius: 0
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    scales: { y: { min: 0, max: 1 } }
+                }
+            });
+        }
+        
+        function renderHeatmap() {
+            const d = analyzedData;
+            let html = '<div class="heatmap-label">Consumo promedio por día y hora (W)</div>';
+            
+            const maxVal = Math.max(...d.mapaCalorPromedio.flat());
+            
+            d.diasSemana.forEach((dia, i) => {
+                html += `<div style="grid-column: 1/-1; font-weight: bold; margin-top: 10px;">${dia}</div>`;
+                d.mapaCalorPromedio[i].forEach((val, h) => {
+                    const intensity = val / maxVal;
+                    const color = `rgb(${Math.round(230-intensity*130)}, ${Math.round(126-intensity*50)}, ${Math.round(234-intensity*134)})`;
+                    html += `<div class="heatmap-cell" style="background: ${color}" title="${dia} ${h}:00 - ${val.toFixed(0)}W">${h}</div>`;
+                });
+            });
+            
+            document.getElementById('heatmapContainer').innerHTML = html;
+        }
+        
+        function renderHourlyChart() {
+            const d = analyzedData;
+            const ctx = document.getElementById('hourlyChart').getContext('2d');
+            if (chartInstances.hourly) chartInstances.hourly.destroy();
+            
+            chartInstances.hourly = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: Array.from({length: 24}, (_, i) => i + ':00'),
+                    datasets: [{
+                        label: 'Promedio (W)',
+                        data: d.promedioPorHora,
+                        backgroundColor: d.promedioPorHora.map(v => 
+                            v > d.consumoPromedio * 1.3 ? '#e74c3c' : 
+                            v > d.consumoPromedio ? '#f39c12' : 
+                            v < d.consumoPromedio * 0.5 ? '#2ecc71' : '#667eea'
+                        )
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    plugins: { legend: { display: false } },
+                    scales: { y: { beginAtZero: true } }
+                }
+            });
+        }
+        
+        function renderWeeklyChart() {
+            const d = analyzedData;
+            const ctx = document.getElementById('weeklyChart').getContext('2d');
+            if (chartInstances.weekly) chartInstances.weekly.destroy();
+            
+            chartInstances.weekly = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: d.diasSemana,
+                    datasets: [{
+                        label: 'Promedio (W)',
+                        data: d.promedioPorDia,
+                        backgroundColor: '#764ba2'
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    plugins: { legend: { display: false } },
+                    scales: { y: { beginAtZero: true } }
+                }
+            });
+        }
+        
+        function renderVariabilityChart() {
+            const d = analyzedData;
+            const ctx = document.getElementById('variabilityChart').getContext('2d');
+            if (chartInstances.var) chartInstances.var.destroy();
+            
+            chartInstances.var = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: Array.from({length: 24}, (_, i) => i + ':00'),
+                    datasets: [{
+                        label: 'Promedio',
+                        data: d.promedioPorHora,
+                        backgroundColor: 'rgba(102, 126, 234, 0.6)',
+                        type: 'bar'
+                    }, {
+                        label: 'Variabilidad (±1σ)',
+                        data: d.desviacionPorHora,
+                        borderColor: '#e74c3c',
+                        backgroundColor: 'rgba(231, 76, 60, 0.2)',
+                        type: 'line',
+                        fill: true
+                    }]
+                },
+                options: { responsive: true, scales: { y: { beginAtZero: true } } }
+            });
+        }
+        
+        function renderAppliancesMetrics() {
+            const d = analyzedData;
+            const topPico = d.picos[0];
+            const consumoAparatos = d.picos.reduce((sum, p) => sum + p.diff, 0) / d.picos.length;
+            
+            document.getElementById('appliancesMetrics').innerHTML = `
+                <div class="metric-card">
+                    <div class="metric-icon">🔌</div>
+                    <div class="metric-label">Mayor Pico Detectado</div>
+                    <div class="metric-value">${topPico ? topPico.diff.toFixed(0) : 0} W</div>
+                    <div class="metric-detail">
+                        ${topPico ? topPico.clasificacion.tipo : 'N/A'}<br>
+                        ${topPico ? topPico.time.toLocaleString('es-MX') : ''}
+                    </div>
+                </div>
+                
+                <div class="metric-card">
+                    <div class="metric-icon">📊</div>
+                    <div class="metric-label">Pico Promedio</div>
+                    <div class="metric-value">${consumoAparatos.toFixed(0)} W</div>
+                    <div class="metric-detail">
+                        ${d.picos.length} eventos detectados<br>
+                        en ${d.diasDatos.toFixed(1)} días
+                    </div>
+                </div>
+                
+                <div class="metric-card">
+                    <div class="metric-icon">⚡</div>
+                    <div class="metric-label">Frecuencia de Uso</div>
+                    <div class="metric-value">${(d.picos.length / d.diasDatos).toFixed(1)}</div>
+                    <div class="metric-detail">
+                        Encendidos por día<br>
+                        ${((d.picos.length / d.diasDatos) * 30).toFixed(0)} veces/mes
+                    </div>
+                </div>
+            `;
+        }
+        
+        function renderAppliancesList() {
+            const d = analyzedData;
+            const html = d.picos.slice(0, 30).map((pico, i) => `
+                <div class="appliance-item" style="border-left-color: ${pico.clasificacion.color}">
+                    <div class="appliance-time">${i + 1}. ${pico.time.toLocaleString('es-MX')}</div>
+                    <div class="appliance-power">⚡ Pico de ${pico.diff.toFixed(0)} W (Total: ${pico.power.toFixed(0)} W)</div>
+                    <div class="appliance-type">${pico.clasificacion.tipo} - ${pico.clasificacion.categoria}</div>
+                </div>
+            `).join('');
+            
+            document.getElementById('appliancesList').innerHTML = html || '<p>No se detectaron picos significativos</p>';
+        }
+        
+        function renderComparatives() {
+            const d = analyzedData;
+            
+            const html = `
+                <table class="comparison-table">
+                    <tr>
+                        <th>Métrica</th>
+                        <th>Tu Hogar</th>
+                        <th>Promedio Nacional</th>
+                        <th>Diferencia</th>
+                    </tr>
+                    <tr>
+                        <td>Consumo Mensual</td>
+                        <td>${d.tuConsumoMensual.toFixed(0)} kWh</td>
+                        <td>${d.promedioNacionalMensual} kWh</td>
+                        <td style="color: ${d.comparativoNacional > 0 ? '#e74c3c' : '#2ecc71'}">${d.comparativoNacional > 0 ? '+' : ''}${d.comparativoNacional.toFixed(1)}%</td>
+                    </tr>
+                    <tr>
+                        <td>Costo Mensual</td>
+                        <td>${d.costoMes.toFixed(2)} MXN</td>
+                        <td>${(d.promedioNacionalMensual * d.precioKwh).toFixed(2)} MXN</td>
+                        <td style="color: ${d.costoMes > d.promedioNacionalMensual * d.precioKwh ? '#e74c3c' : '#2ecc71'}">
+                            ${d.costoMes > d.promedioNacionalMensual * d.precioKwh ? '+' : ''}${(d.costoMes - d.promedioNacionalMensual * d.precioKwh).toFixed(2)}
+                        </td>
+                    </tr>
+                    <tr>
+                        <td>Consumo Base</td>
+                        <td>${d.consumoBase.toFixed(0)} W</td>
+                        <td>80-120 W (ideal)</td>
+                        <td>${d.consumoBase > 120 ? '<span class="alert-badge alert-warning">Alto</span>' : '<span class="alert-badge alert-success">Óptimo</span>'}</td>
+                    </tr>
+                    <tr>
+                        <td>Factor de Potencia</td>
+                        <td>${d.factorPotenciaPromedio.toFixed(3)}</td>
+                        <td>>0.90 (ideal)</td>
+                        <td>${d.factorPotenciaPromedio < 0.9 ? '<span class="alert-badge alert-warning">Mejorar</span>' : '<span class="alert-badge alert-success">Excelente</span>'}</td>
+                    </tr>
+                </table>
+            `;
+            
+            document.getElementById('comparativesList').innerHTML = html;
+        }
+        
+        function renderBenchmarkChart() {
+            const d = analyzedData;
+            const ctx = document.getElementById('benchmarkChart').getContext('2d');
+            if (chartInstances.bench) chartInstances.bench.destroy();
+            
+            chartInstances.bench = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: ['Tu Hogar', 'Promedio Nacional', 'Hogar Eficiente', 'Hogar Ineficiente'],
+                    datasets: [{
+                        label: 'Consumo Mensual (kWh)',
+                        data: [d.tuConsumoMensual, d.promedioNacionalMensual, 200, 500],
+                        backgroundColor: ['#667eea', '#95a5a6', '#2ecc71', '#e74c3c']
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    plugins: { legend: { display: false } },
+                    scales: { y: { beginAtZero: true, title: { display: true, text: 'kWh/mes' } } }
+                }
+            });
+        }
+        
+        function renderPredictionsMetrics() {
+            const d = analyzedData;
+            const cambio = d.consumoProyectado30d - d.consumoPromedio;
+            
+            document.getElementById('predictionsMetrics').innerHTML = `
+                <div class="metric-card">
+                    <div class="metric-icon">🔮</div>
+                    <div class="metric-label">Consumo Proyectado (30d)</div>
+                    <div class="metric-value">${d.consumoProyectado30d.toFixed(0)} W</div>
+                    <div class="metric-detail">
+                        Cambio: ${cambio > 0 ? '+' : ''}${cambio.toFixed(0)} W<br>
+                        ${Math.abs((cambio/d.consumoPromedio)*100).toFixed(1)}% vs actual
+                    </div>
+                </div>
+                
+                <div class="metric-card">
+                    <div class="metric-icon">💰</div>
+                    <div class="metric-label">Costo Proyectado (30d)</div>
+                    <div class="metric-value">${d.costoProyectado30d.toFixed(2)}</div>
+                    <div class="metric-detail">
+                        Diferencia: ${(d.costoProyectado30d - d.costoMes).toFixed(2)}<br>
+                        ${((d.costoProyectado30d/d.costoMes - 1)*100).toFixed(1)}% vs actual
+                    </div>
+                </div>
+                
+                <div class="metric-card">
+                    <div class="metric-icon">📈</div>
+                    <div class="metric-label">Tasa de Crecimiento</div>
+                    <div class="metric-value">${(d.tendencia * 100).toFixed(3)}%</div>
+                    <div class="metric-detail">
+                        Por día<br>
+                        ${d.tendencia > 0 ? '⚠️ Consumo aumentando' : '✅ Consumo disminuyendo'}
+                    </div>
+                </div>
+            `;
+        }
+        
+        function renderPredictionChart() {
+            const d = analyzedData;
+            const ctx = document.getElementById('predictionChart').getContext('2d');
+            if (chartInstances.pred) chartInstances.pred.destroy();
+            
+            const dias = Array.from({length: 31}, (_, i) => i);
+            const proyeccion = dias.map(dia => d.consumoPromedio * (1 + d.tendencia * dia));
+            const costoProyeccion = proyeccion.map(consumo => (consumo * 24 / 1000) * d.precioKwh);
+            
+            chartInstances.pred = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: dias.map(d => `Día ${d}`),
+                    datasets: [{
+                        label: 'Consumo Proyectado (W)',
+                        data: proyeccion,
+                        borderColor: '#667eea',
+                        backgroundColor: 'rgba(102, 126, 234, 0.1)',
+                        fill: true,
+                        yAxisID: 'y'
+                    }, {
+                        label: 'Costo Diario Proyectado (MXN)',
+                        data: costoProyeccion,
+                        borderColor: '#e74c3c',
+                        backgroundColor: 'rgba(231, 76, 60, 0.1)',
+                        fill: true,
+                        yAxisID: 'y1'
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    scales: {
+                        y: { type: 'linear', position: 'left', title: { display: true, text: 'Watts' } },
+                        y1: { type: 'linear', position: 'right', title: { display: true, text: 'MXN' }, grid: { drawOnChartArea: false } }
+                    }
+                }
+            });
+        }
+        
+        function renderRecommendations() {
+            const d = analyzedData;
+            let recomendaciones = [];
+            
+            if (d.ahorroMensual > 50) {
+                recomendaciones.push({
+                    prioridad: 'ALTA',
+                    titulo: 'Eliminar consumo fantasma',
+                    descripcion: 'Usa regletas con interruptor, desconecta cargadores',
+                    ahorro: `${d.ahorroMensual.toFixed(2)} MXN/mes`,
+                    dificultad: 'Fácil'
+                });
+            }
+            
+            if (d.factorPotenciaPromedio < 0.85) {
+                recomendaciones.push({
+                    prioridad: 'ALTA',
+                    titulo: 'Reemplazar equipos ineficientes',
+                    descripcion: 'Cambia cargadores genéricos por originales, actualiza electrodomésticos viejos',
+                    ahorro: '10-15% en eficiencia',
+                    dificultad: 'Media'
+                });
+            }
+            
+            const horaPico = d.promedioPorHora.indexOf(Math.max(...d.promedioPorHora));
+            if (d.promedioPorHora[horaPico] > d.consumoPromedio * 1.5) {
+                recomendaciones.push({
+                    prioridad: 'MEDIA',
+                    titulo: `Reprogramar uso de aparatos (${horaPico}:00 hrs)`,
+                    descripcion: 'Evita usar lavadora, secadora o AC simultáneamente',
+                    ahorro: 'Reduce picos de demanda',
+                    dificultad: 'Fácil'
+                });
+            }
+            
+            if (d.picos.length > 20) {
+                recomendaciones.push({
+                    prioridad: 'BAJA',
+                    titulo: 'Optimizar ciclos de uso',
+                    descripcion: 'Agrupa tareas que requieran los mismos aparatos',
+                    ahorro: '5-10% en eficiencia',
+                    dificultad: 'Fácil'
+                });
+            }
+            
+            recomendaciones.push({
+                prioridad: 'INFO',
+                titulo: 'Monitoreo continuo',
+                descripcion: 'Revisa este dashboard semanalmente para detectar cambios',
+                ahorro: 'Prevención de aumentos',
+                dificultad: 'Muy fácil'
+            });
+            
+            const html = recomendaciones.map(rec => {
+                const colorPrioridad = rec.prioridad === 'ALTA' ? 'alert-danger' : 
+                                       rec.prioridad === 'MEDIA' ? 'alert-warning' : 
+                                       rec.prioridad === 'BAJA' ? 'alert-info' : 'alert-success';
+                return `
+                    <div class="insight-item">
+                        <div class="insight-title">
+                            <span class="alert-badge ${colorPrioridad}">${rec.prioridad}</span>
+                            ${rec.titulo}
+                        </div>
+                        <div class="insight-description">
+                            ${rec.descripcion}<br>
+                            <strong>Ahorro potencial:</strong> ${rec.ahorro}<br>
+                            <strong>Dificultad:</strong> ${rec.dificultad}
+                        </div>
+                    </div>
+                `;
+            }).join('');
+            
+            document.getElementById('recommendationsList').innerHTML = html;
+        }
+    </script>
+</body>
+</html>
