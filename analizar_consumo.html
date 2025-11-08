@@ -304,6 +304,7 @@
                 <div class="tab" onclick="switchTab('comparativas')">📊 Comparativas</div>
                 <div class="tab" onclick="switchTab('predicciones')">🔮 Predicciones</div>
                 <div class="tab" onclick="switchTab('causal')">🔗 Análisis Causal</div>
+                <div class="tab" onclick="switchTab('impacto')">🌍 Impacto Ambiental</div>
             </div>
 
             <div id="tab-resumen" class="tab-content active">
@@ -393,6 +394,18 @@
                     <canvas id="causalChart"></canvas>
                 </div>
                 <div class="metrics-grid" id="causalMetrics"></div>
+            </div>
+
+            <div id="tab-impacto" class="tab-content">
+                <div class="insights-section">
+                    <h3>🌍 Impacto Ambiental de tu Consumo</h3>
+                    <div id="impactoAmbientalMetrics" class="metrics-grid"></div>
+                </div>
+                <div class="chart-container">
+                    <h3>🔌 Comparativa de Ahorro con Paneles Solares</h3>
+                    <div id="solarSavingsChart"></div>
+                     <canvas id="solarChart"></canvas>
+                </div>
             </div>
         </div>
     </div>
@@ -625,6 +638,7 @@
             renderPredictionChart();
             renderRecommendations();
             renderCausalAnalysis();
+            renderImpactoAmbiental();
             document.getElementById('insightsList').innerHTML += generarDiagnosticoNLP();
         }
 
@@ -1557,6 +1571,107 @@ function generarReporteEjecutivo() {
     a.download = `reporte_energia_${new Date().toISOString().slice(0,10)}.json`;
     a.click();
 }
+
+        function renderImpactoAmbiental() {
+            const d = analyzedData;
+            if (!d) return;
+
+            // 1. Huella de Carbono
+            const factorEmisionMexico = 0.444; // kg CO2e / kWh
+            const co2MensualKg = d.tuConsumoMensual * factorEmisionMexico;
+
+            // 2. Equivalencias Visuales
+            const co2AnualKg = co2MensualKg * 12;
+            const arbolesNecesarios = co2AnualKg / 22; // 22 kg CO2 por árbol al año
+
+            // 3. Comparativa con Paneles Solares
+            const costoSistemaSolar = 75000; // MXN, para un sistema de 3kW
+            const produccionAnualSistema = 3 * 1500; // 3kW * 1500 horas de sol pico al año
+            const ahorroAnualSolar = produccionAnualSistema * d.precioKwh;
+            const paybackAnios = costoSistemaSolar / ahorroAnualSolar;
+
+            let impactoHtml = `
+                <div class="metric-card">
+                    <div class="metric-icon">💨</div>
+                    <div class="metric-label">Huella de Carbono Mensual</div>
+                    <div class="metric-value">${co2MensualKg.toFixed(1)} kg CO₂e</div>
+                    <div class="metric-detail">
+                        Basado en tu consumo de ${d.tuConsumoMensual.toFixed(0)} kWh/mes.
+                    </div>
+                </div>
+            `;
+
+            impactoHtml += `
+                <div class="metric-card">
+                    <div class="metric-icon">🌳</div>
+                    <div class="metric-label">Árboles para Compensar</div>
+                    <div class="metric-value">${arbolesNecesarios.toFixed(1)} árboles</div>
+                    <div class="metric-detail">
+                       Necesarios para absorber tu huella de carbono anual.
+                    </div>
+                </div>
+            `;
+
+             impactoHtml += `
+                <div class="metric-card">
+                    <div class="metric-icon">☀️</div>
+                    <div class="metric-label">Ahorro con Paneles Solares</div>
+                    <div class="metric-value">$${(ahorroAnualSolar / 12).toFixed(0)}/mes</div>
+                    <div class="metric-detail">
+                        Sistema pagado en ${paybackAnios.toFixed(1)} años.
+                    </div>
+                </div>
+            `;
+
+            document.getElementById('impactoAmbientalMetrics').innerHTML = impactoHtml;
+
+            renderSolarChart(costoSistemaSolar, ahorroAnualSolar);
+        }
+
+        function renderSolarChart(costoSistemaSolar, ahorroAnualSolar) {
+            const ctx = document.getElementById('solarChart').getContext('2d');
+            if (chartInstances.solar) chartInstances.solar.destroy();
+
+            const anios = Array.from({length: 11}, (_, i) => i);
+            const inversionAcumulada = anios.map(a => costoSistemaSolar);
+            const ahorroAcumulado = anios.map(a => a * ahorroAnualSolar);
+
+            chartInstances.solar = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: anios.map(a => `Año ${a}`),
+                    datasets: [{
+                        label: 'Inversión Inicial',
+                        data: inversionAcumulada,
+                        borderColor: '#e74c3c',
+                        backgroundColor: 'rgba(231, 76, 60, 0.1)',
+                        fill: false,
+                        borderDash: [5, 5]
+                    }, {
+                        label: 'Ahorro Acumulado',
+                        data: ahorroAcumulado,
+                        borderColor: '#2ecc71',
+                        backgroundColor: 'rgba(46, 204, 113, 0.1)',
+                        fill: true
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    plugins: {
+                        title: {
+                            display: true,
+                            text: 'Recuperación de Inversión en Sistema Solar'
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            title: { display: true, text: 'MXN' }
+                        }
+                    }
+                }
+            });
+        }
     </script>
 </body>
 </html>
