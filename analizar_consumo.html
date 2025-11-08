@@ -274,6 +274,22 @@
             </div>
 
             <div id="loading" class="loading" style="display:none;">⏳ Analizando datos con IA...</div>
+
+            <div class="config-section" style="margin-top: 30px;">
+                <h3>🌍 Correlaciones Contextuales</h3>
+                <div class="config-item">
+                    <label>📍 Ubicación (para clima)</label>
+                    <input type="text" id="location" placeholder="Ej: Ciudad de México" />
+                </div>
+                <div class="config-item">
+                    <label>📅 Anotar Evento</label>
+                    <input type="date" id="eventDate" />
+                    <input type="text" id="eventDescription" placeholder="Ej: Vacaciones" style="margin-top: 5px;" />
+                    <button onclick="addEvent()" style="margin-top: 5px; padding: 8px; background: #667eea; color: white; border: none; border-radius: 5px;">Añadir Evento</button>
+                </div>
+                <div id="eventList" style="grid-column: 1 / -1;"></div>
+            </div>
+
             <div class="config-section" style="margin-top: 30px;">
                 <h3>🔮 Simulador de Optimización</h3>
                 <div class="config-item">
@@ -304,7 +320,7 @@
                 <div class="tab" onclick="switchTab('comparativas')">📊 Comparativas</div>
                 <div class="tab" onclick="switchTab('predicciones')">🔮 Predicciones</div>
                 <div class="tab" onclick="switchTab('causal')">🔗 Análisis Causal</div>
-                <div class="tab" onclick="switchTab('predictivo')">🔮 Análisis Predictivo Avanzado</div>
+
             </div>
 
             <div id="tab-resumen" class="tab-content active">
@@ -396,10 +412,6 @@
                 <div class="metrics-grid" id="causalMetrics"></div>
             </div>
 
-            <div id="tab-predictivo" class="tab-content">
-                <div class="insights-section">
-                    <h3>🔮 Análisis Predictivo Avanzado</h3>
-                    <div id="predictiveAnalysis"></div>
                 </div>
             </div>
         </div>
@@ -408,6 +420,64 @@
     <script>
         let chartInstances = {};
         let analyzedData = null;
+        let events = JSON.parse(localStorage.getItem('events')) || [];
+
+        function estimateOccupancy(data) {
+            const occupancy = [];
+            for (let i = 1; i < data.length; i++) {
+                const diff = Math.abs(data[i].power - data[i-1].power);
+                if (diff > 50) {
+                    occupancy.push({ time: data[i].time, occupied: 1 });
+                } else {
+                    occupancy.push({ time: data[i].time, occupied: 0 });
+                }
+            }
+            return occupancy;
+        }
+
+        function addEvent() {
+            const date = document.getElementById('eventDate').value;
+            const description = document.getElementById('eventDescription').value;
+            if (date && description) {
+                events.push({ date, description });
+                localStorage.setItem('events', JSON.stringify(events));
+                renderEvents();
+                document.getElementById('eventDate').value = '';
+                document.getElementById('eventDescription').value = '';
+            }
+        }
+
+        function deleteEvent(index) {
+            events.splice(index, 1);
+            localStorage.setItem('events', JSON.stringify(events));
+            renderEvents();
+        }
+
+        function renderEvents() {
+            const eventList = document.getElementById('eventList');
+            eventList.innerHTML = events.map((event, index) => `
+                <div class="event-item" style="display: flex; justify-content: space-between; align-items: center; padding: 5px; border-bottom: 1px solid #eee;">
+                    <span><strong>${event.date}:</strong> ${event.description}</span>
+                    <button onclick="deleteEvent(${index})" style="background: #e74c3c; color: white; border: none; border-radius: 5px; padding: 3px 8px;">X</button>
+                </div>
+            `).join('');
+        }
+
+        async function fetchWeatherData(latitude, longitude, startDate, endDate) {
+            const url = `https://archive-api.open-meteo.com/v1/archive?latitude=${latitude}&longitude=${longitude}&start_date=${startDate}&end_date=${endDate}&hourly=temperature_2m,relative_humidity_2m`;
+            try {
+                const response = await fetch(url);
+                if (!response.ok) {
+                    console.error('Error fetching weather data:', response.statusText);
+                    return null;
+                }
+                const data = await response.json();
+                return data;
+            } catch (error) {
+                console.error('Error fetching weather data:', error);
+                return null;
+            }
+        }
 
         function switchTab(tabName) {
             document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
@@ -450,7 +520,28 @@
             });
         });
 
-        function procesarDatos(data) {
+        document.addEventListener('DOMContentLoaded', renderEvents);
+
+        async function getCoordinates(location) {
+            if (!location) return null;
+            const url = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(location)}`;
+            try {
+                const response = await fetch(url);
+                const data = await response.json();
+                if (data.results && data.results.length > 0) {
+                    return {
+                        latitude: data.results[0].latitude,
+                        longitude: data.results[0].longitude
+                    };
+                }
+                return null;
+            } catch (error) {
+                console.error('Error fetching coordinates:', error);
+                return null;
+            }
+        }
+
+        async function procesarDatos(data) {
             const precioKwh = parseFloat(document.getElementById('precioKwh').value);
             const umbralPico = parseFloat(document.getElementById('umbralPico').value);
             const consumoBaseEsperado = parseFloat(document.getElementById('consumoBaseEsperado').value);
@@ -469,6 +560,33 @@
             if (datosLimpios.length === 0) {
                 alert('No se encontraron datos válidos');
                 return;
+            }
+
+            const location = document.getElementById('location').value;
+            const coordinates = await getCoordinates(location);
+            let weatherData = null;
+            if (coordinates) {
+                const startDate = datosLimpios[0].time.toISOString().slice(0, 10);
+                const endDate = datosLimpios[datosLimpios.length - 1].time.toISOString().slice(0, 10);
+                weatherData = await fetchWeatherData(coordinates.latitude, coordinates.longitude, startDate, endDate);
+            }
+
+            if (weatherData && weatherData.hourly) {
+                const weatherMap = new Map();
+                weatherData.hourly.time.forEach((t, i) => {
+                    weatherMap.set(new Date(t).getTime(), {
+                        temperature: weatherData.hourly.temperature_2m[i],
+                        humidity: weatherData.hourly.relative_humidity_2m[i]
+                    });
+                });
+
+                datosLimpios.forEach(d => {
+                    const weather = weatherMap.get(d.time.getTime());
+                    if (weather) {
+                        d.temperature = weather.temperature;
+                        d.humidity = weather.humidity;
+                    }
+                });
             }
 
             // Análisis estadístico avanzado
@@ -596,6 +714,7 @@
             analyzedData.clusters = clusterizarDispositivos();
             analyzedData.desgaste = analizarDesgaste();
             analyzedData.deteccionAnomalias = componentes.residuales;
+            analyzedData.occupancy = estimateOccupancy(datosLimpios);
 
             renderizarDashboard();
             const anomalias = detectarAnomalias(analyzedData.datosLimpios);
@@ -637,6 +756,8 @@
             renderPredictionChart();
             renderRecommendations();
             renderCausalAnalysis();
+            renderOccupancyMetrics();
+            renderOccupancyChart();
             document.getElementById('insightsList').innerHTML += generarDiagnosticoNLP();
         }
 
@@ -813,6 +934,22 @@
             const labels = Object.keys(agrupado).sort();
             const valores = labels.map(k => agrupado[k].reduce((a,b) => a+b, 0) / agrupado[k].length);
 
+            const eventAnnotations = events.map(event => {
+                return {
+                    type: 'line',
+                    mode: 'vertical',
+                    scaleID: 'x',
+                    value: new Date(event.date).toLocaleString('es-MX', { month: 'short', day: 'numeric', hour: '2-digit' }),
+                    borderColor: 'red',
+                    borderWidth: 2,
+                    label: {
+                        content: event.description,
+                        enabled: true,
+                        position: 'top'
+                    }
+                }
+            });
+
             chartInstances.main = new Chart(ctx, {
                 type: 'line',
                 data: {
@@ -842,7 +979,12 @@
                 },
                 options: {
                     responsive: true,
-                    plugins: { legend: { display: true } },
+                    plugins: {
+                        legend: { display: true },
+                        annotation: {
+                            annotations: eventAnnotations
+                        }
+                    },
                     scales: { y: { beginAtZero: true, title: { display: true, text: 'Watts' } } }
                 }
             });
@@ -1392,26 +1534,36 @@ function analizarDesgaste() {
         alerta: ciclosRapidos.length > 3 ? 'Posible aparato defectuoso o mal configurado' : null
     };
 }
-// Implementación del análisis causal
-function detectarAnomalias(datos) {
-    const potencias = datos.map(d => d.power);
-    const q1 = potencias.slice().sort((a, b) => a - b)[Math.floor(potencias.length * 0.25)];
-    const q3 = potencias.slice().sort((a, b) => a - b)[Math.floor(potencias.length * 0.75)];
-    const iqr = q3 - q1;
-    const umbralSuperiorIQR = q3 + 1.5 * iqr;
-    const umbralInferiorIQR = q1 - 1.5 * iqr;
-
-    const media = potencias.reduce((a, b) => a + b, 0) / potencias.length;
-    const desviacionEstandar = Math.sqrt(potencias.map(x => Math.pow(x - media, 2)).reduce((a, b) => a + b) / potencias.length);
-    const umbralZScore = 3;
-
-    return datos.map(d => {
-        const z_score = Math.abs((d.power - media) / desviacionEstandar);
-        const anomaliaIQR = d.power > umbralSuperiorIQR || d.power < umbralInferiorIQR;
-        const anomaliaZScore = z_score > umbralZScore;
-        return { ...d, anomalia: anomaliaIQR || anomaliaZScore };
-    }).filter(d => d.anomalia);
+function calculateCorrelation(arr1, arr2) {
+    if (arr1.length !== arr2.length) {
+        return NaN;
+    }
+    let n = 0;
+    let sum1 = 0, sum2 = 0, sum1sq = 0, sum2sq = 0, pSum = 0;
+    for (let i = 0; i < arr1.length; i++) {
+        const val1 = arr1[i];
+        const val2 = arr2[i];
+        if (val1 !== undefined && val2 !== undefined) {
+            n++;
+            sum1 += val1;
+            sum2 += val2;
+            sum1sq += val1 * val1;
+            sum2sq += val2 * val2;
+            pSum += val1 * val2;
+        }
+    }
+    if (n === 0) {
+        return 0;
+    }
+    const num = pSum - (sum1 * sum2 / n);
+    const den = Math.sqrt((sum1sq - sum1 * sum1 / n) * (sum2sq - sum2 * sum2 / n));
+    if (den === 0) {
+        return 0;
+    }
+    return num / den;
 }
+// Implementación del análisis causal
+
 
 function renderCausalAnalysis() {
     const d = analyzedData;
@@ -1419,13 +1571,14 @@ function renderCausalAnalysis() {
     // Análisis de Granger Causality simplificado
     const causalFactors = [];
 
-    // Correlación temperatura-consumo (simulado)
-    const tempCorrelation = Math.random() * 0.6 + 0.3; // Podrías integrar API del clima
-    causalFactors.push({
-        factor: '🌡️ Temperatura ambiente',
-        impact: `${(tempCorrelation * 100).toFixed(0)}%`,
-        explicacion: tempCorrelation > 0.5 ? 'Alta dependencia del clima' : 'Dependencia moderada'
-    });
+    const tempCorrelation = calculateCorrelation(d.datosLimpios.map(d => d.temperature), d.datosLimpios.map(d => d.power));
+    if (!isNaN(tempCorrelation)) {
+        causalFactors.push({
+            factor: '🌡️ Temperatura ambiente',
+            impact: `${(tempCorrelation * 100).toFixed(0)}%`,
+            explicacion: tempCorrelation > 0.5 ? 'Alta dependencia del clima' : 'Dependencia moderada'
+        });
+    }
 
     // Día de la semana
     const weekendRatio = (d.promedioPorDia[0] + d.promedioPorDia[6]) / 2 / d.promedioPorDia[3];
