@@ -304,6 +304,8 @@
                 <div class="tab" onclick="switchTab('comparativas')">📊 Comparativas</div>
                 <div class="tab" onclick="switchTab('predicciones')">🔮 Predicciones</div>
                 <div class="tab" onclick="switchTab('causal')">🔗 Análisis Causal</div>
+                <div class="tab" onclick="switchTab('signature')">✍️ Biblioteca de Firmas</div>
+                <div class="tab" onclick="switchTab('cycles')">🔄 Detección de Ciclos</div>
             </div>
 
             <div id="tab-resumen" class="tab-content active">
@@ -394,12 +396,77 @@
                 </div>
                 <div class="metrics-grid" id="causalMetrics"></div>
             </div>
+            <div id="tab-signature" class="tab-content">
+                <div class="insights-section">
+                    <h3>✍️ Biblioteca de Firmas de Electrodomésticos</h3>
+                    <p>Crea perfiles de consumo de tus aparatos específicos para un reconocimiento más preciso.</p>
+                    <div id="signatureForm">
+                        <input type="text" id="signatureName" placeholder="Nombre del Aparato (e.g., Lavadora Sala)">
+                        <input type="number" id="signatureWatts" placeholder="Potencia (W)">
+                        <input type="text" id="signatureColor" placeholder="Color (e.g., #3498db)">
+                        <button onclick="addSignature()">Añadir Firma</button>
+                    </div>
+                    <div id="signatureList"></div>
+                </div>
+            </div>
+            <div id="tab-cycles" class="tab-content">
+                <div class="insights-section">
+                    <h3>🔄 Detección de Ciclos de Uso</h3>
+                    <p>Identificación de ciclos completos de aparatos (e.g., lavadora, lavavajillas) para entender patrones de uso complejos.</p>
+                    <div id="cycleList"></div>
+                </div>
+            </div>
         </div>
     </div>
 
     <script>
         let chartInstances = {};
         let analyzedData = null;
+        let signatureLibrary = [];
+
+        function loadSignatures() {
+            const signatures = localStorage.getItem('signatureLibrary');
+            if (signatures) {
+                signatureLibrary = JSON.parse(signatures);
+            }
+            renderSignatures();
+        }
+
+        function renderSignatures() {
+            const list = document.getElementById('signatureList');
+            list.innerHTML = signatureLibrary.map((sig, index) => `
+                <div class="appliance-item" style="border-left-color: ${sig.color}">
+                    <div class="appliance-power">${sig.name} - ${sig.watts}W</div>
+                    <button onclick="removeSignature(${index})">Eliminar</button>
+                </div>
+            `).join('');
+        }
+
+        function addSignature() {
+            const name = document.getElementById('signatureName').value;
+            const watts = parseInt(document.getElementById('signatureWatts').value);
+            const color = document.getElementById('signatureColor').value;
+
+            if (name && watts && color) {
+                signatureLibrary.push({ name, watts, color });
+                localStorage.setItem('signatureLibrary', JSON.stringify(signatureLibrary));
+                renderSignatures();
+                if (analyzedData) { // Re-render appliance list if data is loaded
+                    renderAppliancesList();
+                }
+                document.getElementById('signatureName').value = '';
+                document.getElementById('signatureWatts').value = '';
+                document.getElementById('signatureColor').value = '';
+            } else {
+                alert('Por favor, completa todos los campos de la firma.');
+            }
+        }
+
+        function removeSignature(index) {
+            signatureLibrary.splice(index, 1);
+            localStorage.setItem('signatureLibrary', JSON.stringify(signatureLibrary));
+            renderSignatures();
+        }
 
         function switchTab(tabName) {
             document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
@@ -408,7 +475,34 @@
             document.getElementById(`tab-${tabName}`).classList.add('active');
         }
 
-        function clasificarAparato(watts) {
+        window.onload = loadSignatures;
+
+        function clasificarAparato(watts, pico) {
+            // Check for user-tagged data first
+            if (pico && pico.tagged) {
+                const signature = signatureLibrary.find(sig => sig.name === pico.tagged);
+                if (signature) {
+                    return { tipo: signature.name, color: signature.color, categoria: 'Etiquetado' };
+                }
+            }
+
+            // Then, check custom signatures
+            let bestMatch = null;
+            let minDiff = Infinity;
+
+            for (const sig of signatureLibrary) {
+                const diff = Math.abs(watts - sig.watts);
+                if (diff < sig.watts * 0.2 && diff < minDiff) { // 20% tolerance
+                    minDiff = diff;
+                    bestMatch = { tipo: sig.name, color: sig.color, categoria: 'Personalizado' };
+                }
+            }
+
+            if (bestMatch) {
+                return bestMatch;
+            }
+
+            // Fallback to generic classification
             watts = Math.round(watts);
             if (watts > 2500) return { tipo: '🚿 Regadera eléctrica / HVAC', color: '#e74c3c', categoria: 'Alto consumo' };
             if (watts > 1500) return { tipo: '🍳 Horno / Parrilla inducción', color: '#e67e22', categoria: 'Alto consumo' };
@@ -499,12 +593,13 @@
             for (let i = 1; i < datosLimpios.length; i++) {
                 const diff = datosLimpios[i].power - datosLimpios[i-1].power;
                 if (diff > umbralPico) {
-                    picos.push({
+                    const pico = {
                         time: datosLimpios[i].time,
                         power: datosLimpios[i].power,
-                        diff: diff,
-                        clasificacion: clasificarAparato(diff)
-                    });
+                        diff: diff
+                    };
+                    pico.clasificacion = clasificarAparato(diff, pico);
+                    picos.push(pico);
                 }
             }
             picos.sort((a, b) => b.diff - a.diff);
@@ -588,6 +683,8 @@
             analyzedData.clusters = clusterizarDispositivos();
             analyzedData.desgaste = analizarDesgaste();
             analyzedData.deteccionAnomalias = componentes.residuales;
+            analyzedData.cycles = detectCycles(analyzedData.picos);
+
 
             renderizarDashboard();
         }
@@ -626,6 +723,85 @@
             renderRecommendations();
             renderCausalAnalysis();
             document.getElementById('insightsList').innerHTML += generarDiagnosticoNLP();
+            renderCycles();
+        }
+
+        function detectCycles(picos) {
+            const cycles = [];
+            const applianceEvents = {};
+
+            // Group events by appliance
+            for (const pico of picos) {
+                const applianceName = pico.clasificacion.tipo;
+                if (!applianceEvents[applianceName]) {
+                    applianceEvents[applianceName] = [];
+                }
+                applianceEvents[applianceName].push(pico);
+            }
+
+            // Detect cycles within each appliance's events
+            for (const applianceName in applianceEvents) {
+                const events = applianceEvents[applianceName];
+                if (events.length < 2) continue;
+
+                let currentCycle = {
+                    name: applianceName,
+                    startTime: events[0].time,
+                    endTime: events[0].time,
+                    picos: [events[0]]
+                };
+
+                for (let i = 1; i < events.length; i++) {
+                    const timeDiff = (events[i].time - currentCycle.endTime) / (1000 * 60); // in minutes
+                    if (timeDiff < 30) { // If events are within 30 minutes, consider them part of the same cycle
+                        currentCycle.picos.push(events[i]);
+                        currentCycle.endTime = events[i].time;
+                    } else {
+                        if (currentCycle.picos.length > 1) {
+                            cycles.push(currentCycle);
+                        }
+                        currentCycle = {
+                            name: applianceName,
+                            startTime: events[i].time,
+                            endTime: events[i].time,
+                            picos: [events[i]]
+                        };
+                    }
+                }
+                if (currentCycle.picos.length > 1) {
+                    cycles.push(currentCycle);
+                }
+            }
+
+            return cycles;
+        }
+
+        function renderCycles() {
+            const d = analyzedData;
+            const cycleList = document.getElementById('cycleList');
+            if (!d.cycles || d.cycles.length === 0) {
+                cycleList.innerHTML = '<p>No se detectaron ciclos de uso complejos.</p>';
+                return;
+            }
+
+            const html = d.cycles.map(cycle => {
+                const duration = ((cycle.endTime - cycle.startTime) / (1000 * 60)).toFixed(1);
+                const totalPower = cycle.picos.reduce((sum, p) => sum + p.diff, 0);
+                return `
+                    <div class="insight-item">
+                        <div class="insight-title">🔄 Ciclo de ${cycle.name}</div>
+                        <div class="insight-description">
+                            Inicio: ${cycle.startTime.toLocaleString('es-MX')}<br>
+                            Fin: ${cycle.endTime.toLocaleString('es-MX')}<br>
+                            Duración: ${duration} minutos<br>
+                            Eventos: ${cycle.picos.length}<br>
+                            Consumo del ciclo: ${totalPower.toFixed(0)} Wh
+                        </div>
+                    </div>
+                `;
+            }).join('');
+
+            cycleList.innerHTML = html;
         }
 
         function renderMetricsGrid() {
@@ -1027,15 +1203,52 @@
 
         function renderAppliancesList() {
             const d = analyzedData;
+            const signatureOptions = signatureLibrary.map(sig => `<option value="${sig.name}">${sig.name}</option>`).join('');
+
             const html = d.picos.slice(0, 30).map((pico, i) => `
                 <div class="appliance-item" style="border-left-color: ${pico.clasificacion.color}">
                     <div class="appliance-time">${i + 1}. ${pico.time.toLocaleString('es-MX')}</div>
                     <div class="appliance-power">⚡ Pico de ${pico.diff.toFixed(0)} W (Total: ${pico.power.toFixed(0)} W)</div>
                     <div class="appliance-type">${pico.clasificacion.tipo} - ${pico.clasificacion.categoria}</div>
+                    <div class="appliance-tagging">
+                        <select id="tag-${i}">
+                            <option value="">-- Etiquetar --</option>
+                            ${signatureOptions}
+                            <option value="new">**Nuevo Aparato**</option>
+                        </select>
+                        <button onclick="tagAppliance(${i}, ${pico.diff.toFixed(0)})">Asignar</button>
+                    </div>
                 </div>
             `).join('');
 
             document.getElementById('appliancesList').innerHTML = html || '<p>No se detectaron picos significativos</p>';
+        }
+
+        function tagAppliance(picoIndex, watts) {
+            const select = document.getElementById(`tag-${picoIndex}`);
+            const selectedValue = select.value;
+
+            if (!selectedValue) return;
+
+            if (selectedValue === 'new') {
+                const name = prompt('Nombre del nuevo aparato:');
+                if (name) {
+                    const color = '#' + Math.floor(Math.random()*16777215).toString(16);
+                    signatureLibrary.push({ name, watts, color });
+                    localStorage.setItem('signatureLibrary', JSON.stringify(signatureLibrary));
+                    renderSignatures();
+                    renderAppliancesList(); // Re-render to update dropdowns
+                }
+            } else {
+                const signature = signatureLibrary.find(sig => sig.name === selectedValue);
+                if (signature) {
+                    analyzedData.picos[picoIndex].tagged = signature.name;
+                    // Re-classify the pico
+                    analyzedData.picos[picoIndex].clasificacion = clasificarAparato(watts, analyzedData.picos[picoIndex]);
+                    renderAppliancesList(); // Re-render to show the new classification
+                    alert(`El pico de ${watts}W ha sido etiquetado como ${signature.name}.`);
+                }
+            }
         }
 
         function renderComparatives() {
