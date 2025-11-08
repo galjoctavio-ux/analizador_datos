@@ -11,6 +11,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.23/jspdf.plugin.autotable.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.11.0/dist/tf.min.js"></script>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
 
@@ -399,6 +400,14 @@
                 <div class="tab" onclick="switchTab('seriesTemporales')">🕰️ Series Temporales</div>
                 <div class="tab" onclick="switchTab('alertasAparatos')">🔔 Alertas y Aparatos</div>
                 <div class="tab" onclick="switchTab('logros')">🏆 Logros</div>
+                <div class="tab" onclick="switchTab('ciclosAparatos')">🔄 Ciclos de Aparatos</div>
+            </div>
+
+            <div id="tab-ciclosAparatos" class="tab-content">
+                <div class="insights-section" id="ciclosAparatosContainer">
+                    <h3>🔄 Ciclos de Operación de Aparatos</h3>
+                    <p>Análisis detallado de los sub-ciclos de aparatos como lavadoras. Esto ayuda a entender cómo consume energía cada fase (lavado, enjuague, centrifugado).</p>
+                </div>
             </div>
 
             <div id="tab-resumen" class="tab-content active">
@@ -761,6 +770,38 @@
             if (tabName === 'logros') {
                 renderizarLogros();
             }
+            if (tabName === 'ciclosAparatos') {
+                renderizarCiclosAparatos();
+            }
+        }
+
+        function renderizarCiclosAparatos() {
+            const d = analyzedData;
+            const container = document.getElementById('ciclosAparatosContainer');
+
+            let html = `<h3>🔄 Ciclos de Operación de Aparatos</h3>
+                        <p>Análisis detallado de los sub-ciclos de aparatos como lavadoras. Esto ayuda a entender cómo consume energía cada fase (lavado, enjuague, centrifugado).</p>`;
+
+            if (!d.ciclosAparatos || d.ciclosAparatos.length === 0) {
+                container.innerHTML += '<p>No se detectaron ciclos complejos para analizar.</p>';
+                return;
+            }
+
+            d.ciclosAparatos.forEach(ciclo => {
+                html += `<div class="insight-item">
+                            <div class="insight-title">${ciclo.aparato}</div>
+                            <p><strong>Inicio:</strong> ${ciclo.inicio.toLocaleString('es-MX')}</p>
+                            <p><strong>Sub-ciclos detectados:</strong></p>
+                            <ul>`;
+                ciclo.subCiclos.forEach(sc => {
+                    const duracion = ((sc.fin - sc.inicio) / 1000 / 60).toFixed(1);
+                    html += `<li>Potencia: <strong>${sc.potenciaPromedio.toFixed(0)} W</strong>, Duración: <strong>${duracion} min</strong></li>`;
+                });
+                html += `   </ul>
+                         </div>`;
+            });
+
+            container.innerHTML = html;
         }
 
         function clasificarAparato(watts) {
@@ -1138,10 +1179,11 @@
                 tuConsumoMensual, promedioNacionalMensual, comparativoNacional,
                 precioKwh, tarifaCFE, presupuestoMensual,
                 // Nuevos datos
-                factorCarga, rampas, usoSimultaneo, eficienciaHoraria
+                factorCarga, rampas, usoSimultaneo, eficienciaHoraria,
+                ciclosAparatos: analizarCiclosAparatos(picos, datosLimpios)
             };
 
-            refrescarAnalisisDeCostos(); // Call the new function to perform the initial render
+            refrescarAnalisisDeCostos();
 
             const componentes = calcularComponentesTemporales(datosLimpios);
             analyzedData.scoreEficiencia = calcularScoreEficiencia();
@@ -1171,7 +1213,145 @@
                 console.error("Error running ARIMA forecast:", e);
             }
             const clusters = clusterizarElectrodomesticos(analyzedData.picos);
-            renderizarAnalisisPredictivo(anomalias, predicciones, clusters, anomaliasIQR);
+            let prediccionesLSTM = [];
+             try {
+                prediccionesLSTM = await pronosticoLSTM(analyzedData.datosLimpios);
+            } catch (e) {
+                console.error("Error running LSTM forecast:", e);
+            }
+            renderizarAnalisisPredictivo(anomalias, predicciones, clusters, anomaliasIQR, prediccionesLSTM);
+        }
+
+        async function pronosticoLSTM(datos, steps = 30) {
+            if (typeof tf === 'undefined') {
+                console.error("TensorFlow.js not loaded.");
+                return [];
+            }
+
+            // 1. Preparar los datos
+            const potencias = datos.map(d => d.power);
+            const min = Math.min(...potencias);
+            const max = Math.max(...potencias);
+            const normalizados = potencias.map(p => (p - min) / (max - min));
+
+            const secuenciaLongitud = 24; // Usar 24 horas para predecir la siguiente
+            const X = [];
+            const y = [];
+
+            for (let i = 0; i < normalizados.length - secuenciaLongitud; i++) {
+                X.push(normalizados.slice(i, i + secuenciaLongitud));
+                y.push(normalizados[i + secuenciaLongitud]);
+            }
+
+            if (X.length === 0) {
+                console.error("Not enough data to create sequences for LSTM.");
+                return [];
+            }
+
+            const tensorX = tf.tensor3d(X, [X.length, secuenciaLongitud, 1]);
+            const tensorY = tf.tensor2d(y, [y.length, 1]);
+
+            // 2. Definir el modelo
+            const model = tf.sequential();
+            model.add(tf.layers.lstm({
+                units: 50,
+                inputShape: [secuenciaLongitud, 1],
+                returnSequences: false
+            }));
+            model.add(tf.layers.dense({ units: 1 }));
+
+            // 3. Compilar el modelo
+            model.compile({
+                optimizer: 'adam',
+                loss: 'meanSquaredError'
+            });
+
+            // 4. Entrenar el modelo
+            await model.fit(tensorX, tensorY, {
+                epochs: 20,
+                batchSize: 32,
+                callbacks: {
+                    onEpochEnd: (epoch, logs) => console.log(`LSTM Epoch ${epoch + 1}: loss = ${logs.loss.toFixed(4)}`)
+                }
+            });
+
+            // 5. Generar predicciones
+            let secuenciaActual = normalizados.slice(-secuenciaLongitud);
+            const predicciones = [];
+
+            for (let i = 0; i < steps; i++) {
+                const input = tf.tensor3d([secuenciaActual], [1, secuenciaLongitud, 1]);
+                const pred = model.predict(input);
+                const valorPredicho = await pred.data();
+                predicciones.push(valorPredicho[0]);
+
+                // Actualizar la secuencia para la siguiente predicción
+                secuenciaActual.shift();
+                secuenciaActual.push(valorPredicho[0]);
+                tf.dispose([input, pred]);
+            }
+
+            // 6. Desnormalizar los resultados
+            const prediccionesDenormalizadas = predicciones.map(p => p * (max - min) + min);
+
+            return prediccionesDenormalizadas;
+        }
+
+        /*
+        NOTA SOBRE TRANSFER LEARNING:
+        El concepto de "Transfer Learning" (usar modelos pre-entrenados de otros hogares)
+        no es factible en la arquitectura actual de la aplicación. Al ser una herramienta
+        puramente de lado del cliente y sin una base de datos central o backend,
+        no hay manera de almacenar, compartir o acceder a modelos entrenados por otros
+        usuarios. Una implementación futura podría incluir un backend para gestionar
+        y distribuir modelos de consumo anónimos.
+        */
+
+        function analizarCiclosAparatos(picos, datosLimpios) {
+            const aparatosConCiclos = ['Lavadora / Motor'];
+            const ciclosDetectados = [];
+
+            picos.forEach((pico, index) => {
+                if (aparatosConCiclos.some(tipo => pico.clasificacion.tipo.includes(tipo))) {
+                    // Encontrar el siguiente pico (o el final de los datos)
+                    const siguientePico = picos.slice(index + 1).find(p => p.time > pico.time);
+                    const tiempoFin = siguientePico ? siguientePico.time : datosLimpios[datosLimpios.length - 1].time;
+
+                    // Obtener los datos entre picos
+                    const datosCiclo = datosLimpios.filter(d => d.time > pico.time && d.time < tiempoFin);
+                    if (datosCiclo.length < 5) return; // No hay suficientes datos para analizar
+
+                    const potenciasCiclo = datosCiclo.map(d => d.power);
+                    const promedioCiclo = potenciasCiclo.reduce((a, b) => a + b, 0) / potenciasCiclo.length;
+
+                    // Detección de sub-ciclos (cambios significativos en el consumo)
+                    const subCiclos = [];
+                    let cicloActual = { inicio: datosCiclo[0].time, potencias: [potenciasCiclo[0]] };
+
+                    for (let i = 1; i < potenciasCiclo.length; i++) {
+                        const cambio = Math.abs(potenciasCiclo[i] - potenciasCiclo[i-1]);
+                        if (cambio > promedioCiclo * 0.5) { // Si hay un cambio del 50%
+                            cicloActual.fin = datosCiclo[i-1].time;
+                            cicloActual.potenciaPromedio = cicloActual.potencias.reduce((a,b) => a+b,0) / cicloActual.potencias.length;
+                            subCiclos.push(cicloActual);
+                            cicloActual = { inicio: datosCiclo[i].time, potencias: [potenciasCiclo[i]] };
+                        } else {
+                            cicloActual.potencias.push(potenciasCiclo[i]);
+                        }
+                    }
+                    cicloActual.fin = datosCiclo[datosCiclo.length - 1].time;
+                    cicloActual.potenciaPromedio = cicloActual.potencias.reduce((a,b) => a+b,0) / cicloActual.potencias.length;
+                    subCiclos.push(cicloActual);
+
+                    ciclosDetectados.push({
+                        aparato: pico.clasificacion.tipo,
+                        inicio: pico.time,
+                        fin: tiempoFin,
+                        subCiclos: subCiclos
+                    });
+                }
+            });
+            return ciclosDetectados;
         }
 
         function refrescarAnalisisDeCostos() {
@@ -2541,9 +2721,9 @@ function exportarAExcel() {
     XLSX.writeFile(wb, `Datos_Energeticos_${new Date().toISOString().slice(0,10)}.xlsx`);
 }
 
-    function renderizarAnalisisPredictivo(anomalias, predicciones, clusters, anomaliasIQR) {
+function renderizarAnalisisPredictivo(anomalias, predicciones, clusters, anomaliasIQR, prediccionesLSTM = []) {
         const container = document.getElementById('predictiveAnalysis');
-        if (!container) return; // Exit if the container doesn't exist
+        if (!container) return;
 
         let html = '<h3>🔎 Análisis Predictivo Avanzado</h3>';
 
@@ -2580,9 +2760,10 @@ function exportarAExcel() {
         }
 
         html += '<hr style="margin: 20px 0;">';
-        html += '<h4>Forecasting (Modelo ARIMA)</h4>';
-        html += '<p>Predicción del consumo promedio diario para los próximos 30 días:</p>';
+        html += '<h4>Forecasting (Modelos ARIMA vs. LSTM)</h4>';
+        html += '<p>Comparativa de predicciones de consumo promedio para los próximos 30 días. LSTM (rojo) puede capturar mejor tendencias no lineales, mientras que ARIMA (azul) es bueno para patrones estacionales.</p>';
         html += '<div class="chart-container"><canvas id="predictionChartAdvanced"></canvas></div>';
+
 
         html += '<hr style="margin: 20px 0;">';
         html += '<h4>Clustering de Electrodomésticos (K-means)</h4>';
@@ -2612,14 +2793,24 @@ function exportarAExcel() {
             type: 'line',
             data: {
                 labels: Array.from({length: 30}, (_, i) => `Día ${i + 1}`),
-                datasets: [{
-                    label: 'Consumo Predicho (W)',
-                    data: predicciones,
-                    borderColor: '#764ba2',
-                    backgroundColor: 'rgba(118, 75, 162, 0.1)',
-                    fill: true,
-                    tension: 0.3
-                }]
+                datasets: [
+                    {
+                        label: 'Predicción ARIMA (W)',
+                        data: predicciones,
+                        borderColor: '#764ba2',
+                        backgroundColor: 'rgba(118, 75, 162, 0.1)',
+                        fill: true,
+                        tension: 0.3
+                    },
+                    {
+                        label: 'Predicción LSTM (W)',
+                        data: prediccionesLSTM,
+                        borderColor: '#e74c3c',
+                        backgroundColor: 'rgba(231, 76, 60, 0.1)',
+                        fill: true,
+                        tension: 0.3
+                    }
+                ]
             },
             options: {
                 responsive: true,
