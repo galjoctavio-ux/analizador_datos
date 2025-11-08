@@ -328,6 +328,10 @@
                         <option value="dac">DAC (Alto Consumo)</option>
                     </select>
                 </div>
+                <div class="config-item">
+                    <label>💸 Presupuesto Mensual (MXN)</label>
+                    <input type="number" id="presupuestoMensual" value="1000" step="100" />
+                </div>
             </div>
 
             <div id="loading" class="loading" style="display:none;">⏳ Analizando datos con IA...</div>
@@ -387,7 +391,7 @@
                 <div class="tab" onclick="switchTab('avanzado')">🔬 Analytics Avanzados</div>
                 <div class="tab" onclick="switchTab('chatbot')">🤖 Chatbot IA</div>
                 <div class="tab" onclick="switchTab('seriesTemporales')">🕰️ Series Temporales</div>
-
+                <div class="tab" onclick="switchTab('alertasAparatos')">🔔 Alertas y Aparatos</div>
             </div>
 
             <div id="tab-resumen" class="tab-content active">
@@ -560,6 +564,48 @@
                 </div>
             </div>
 
+            <div id="tab-alertasAparatos" class="tab-content">
+                <div class="insights-section">
+                    <h3>🔔 Alertas Inteligentes</h3>
+                    <div id="alertasInteligentesContainer"></div>
+                </div>
+
+                <div class="chart-container">
+                    <h3>🔌 Scoring de Electrodomésticos</h3>
+                    <table class="comparison-table" id="scoringTable">
+                        <thead>
+                            <tr>
+                                <th>Aparato (Cluster)</th>
+                                <th>Potencia Promedio</th>
+                                <th>Frecuencia de Uso</th>
+                                <th>Costo Mensual Estimado</th>
+                                <th>Score de Eficiencia</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+
+                <div class="insights-section">
+                    <h3>💡 Calculadora de Reemplazo</h3>
+                    <div class="config-section" style="grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));">
+                        <div class="config-item">
+                            <label for="aparatoSeleccionado">Selecciona un aparato para analizar:</label>
+                            <select id="aparatoSeleccionado" onchange="actualizarCalculadoraReemplazo()"></select>
+                        </div>
+                        <div class="config-item">
+                            <label>Costo del Aparato Nuevo (MXN)</label>
+                            <input type="number" id="costoAparatoNuevo" value="15000" step="500">
+                        </div>
+                        <div class="config-item">
+                            <label>Consumo del Aparato Nuevo (W)</label>
+                            <input type="number" id="consumoAparatoNuevo" value="100" step="10">
+                        </div>
+                    </div>
+                    <button onclick="calcularReemplazo()" style="margin-top: 20px; padding: 12px 25px; background: #667eea; color: white; border: none; border-radius: 8px; font-size: 1.1em; cursor: pointer;">Calcular Ahorro</button>
+                    <div id="resultadoReemplazo" class="metrics-grid" style="margin-top: 20px;"></div>
+                </div>
+            </div>
 
                 </div>
             </div>
@@ -641,6 +687,9 @@
                 renderACFChart();
                 renderFFTChart();
             }
+            if (tabName === 'alertasAparatos') {
+                renderizarAlertasYAparatos();
+            }
         }
 
         function clasificarAparato(watts) {
@@ -703,6 +752,7 @@
             const umbralPico = parseFloat(document.getElementById('umbralPico').value);
             const consumoBaseEsperado = parseFloat(document.getElementById('consumoBaseEsperado').value);
             const tarifaCFE = document.getElementById('tarifaCFE').value;
+            const presupuestoMensual = parseFloat(document.getElementById('presupuestoMensual').value);
 
             const datosLimpios = data
                 .filter(row => row.time && row.power && row.power_factor)
@@ -911,7 +961,7 @@
                 costoFantasmaMes, ahorroMensual,
                 tendencia, consumoProyectado30d, costoProyectado30d,
                 tuConsumoMensual, promedioNacionalMensual, comparativoNacional,
-                precioKwh, tarifaCFE,
+                precioKwh, tarifaCFE, presupuestoMensual,
                 // Nuevos datos
                 factorCarga, rampas, usoSimultaneo, eficienciaHoraria
             };
@@ -2600,6 +2650,181 @@ function exportarAExcel() {
             return "Lo siento, no entendí esa pregunta. Puedes preguntarme sobre: '¿por qué subió mi consumo?', '¿qué aparato consume más?', '¿cuál es mi costo mensual?' o '¿cómo puedo ahorrar?'.";
         }
     }
+
+    function renderizarAlertasYAparatos() {
+        generarAlertasInteligentes();
+        renderizarScoringAparatos();
+        popularSelectorAparatos();
+    }
+
+    function popularSelectorAparatos() {
+        const d = analyzedData;
+        const selector = document.getElementById('aparatoSeleccionado');
+        selector.innerHTML = '<option value="">Selecciona uno...</option>';
+        d.clusters.forEach((cluster, index) => {
+            const option = document.createElement('option');
+            option.value = index;
+            option.textContent = `${cluster.tipo.tipo} (${cluster.potenciaPromedio.toFixed(0)} W)`;
+            selector.appendChild(option);
+        });
+    }
+
+    function calcularReemplazo() {
+        const d = analyzedData;
+        const selector = document.getElementById('aparatoSeleccionado');
+        const clusterIndex = selector.value;
+        if (clusterIndex === '') return;
+
+        const cluster = d.clusters[clusterIndex];
+        const costoAparatoNuevo = parseFloat(document.getElementById('costoAparatoNuevo').value);
+        const consumoAparatoNuevo = parseFloat(document.getElementById('consumoAparatoNuevo').value);
+
+        // Ahorro en consumo por hora de uso
+        const ahorroWatts = cluster.potenciaPromedio - consumoAparatoNuevo;
+
+        // Estimación de horas de uso mensual (basado en frecuencia)
+        // Asumimos 1 hora de uso por cada encendido detectado
+        const horasUsoMensual = cluster.frecuencia * (30 / d.diasDatos);
+
+        const ahorroKwhMensual = (ahorroWatts * horasUsoMensual) / 1000;
+        const ahorroMonetarioMensual = ahorroKwhMensual * d.precioKwh;
+
+        const roiMeses = costoAparatoNuevo / ahorroMonetarioMensual;
+
+        const resultadoContainer = document.getElementById('resultadoReemplazo');
+        if (ahorroMonetarioMensual > 0) {
+            resultadoContainer.innerHTML = `
+                <div class="metric-card alert-success">
+                    <div class="metric-icon">💰</div>
+                    <div class="metric-label">Ahorro Mensual Estimado</div>
+                    <div class="metric-value">$${ahorroMonetarioMensual.toFixed(2)}</div>
+                </div>
+                <div class="metric-card alert-info">
+                    <div class="metric-icon">⏳</div>
+                    <div class="metric-label">Retorno de Inversión (ROI)</div>
+                    <div class="metric-value">${(roiMeses / 12).toFixed(1)} años</div>
+                    <div class="metric-detail">(${roiMeses.toFixed(0)} meses)</div>
+                </div>
+            `;
+        } else {
+             resultadoContainer.innerHTML = `
+                <div class="metric-card alert-danger">
+                    <div class="metric-icon">⚠️</div>
+                    <div class="metric-label">No Genera Ahorro</div>
+                    <div class="metric-value">El aparato nuevo consume más</div>
+                </div>
+            `;
+        }
+    }
+
+    function calcularScoreAparato(cluster) {
+        const d = analyzedData;
+        let score = 100;
+
+        // Penalización por alto consumo
+        const ratioConsumo = cluster.potenciaPromedio / d.consumoMaximo;
+        score -= ratioConsumo * 40; // Max -40 puntos
+
+        // Penalización por frecuencia
+        const ratioFrecuencia = cluster.frecuencia / d.picos.length;
+        score -= ratioFrecuencia * 30; // Max -30 puntos
+
+        // Penalización por costo
+        const ratioCosto = cluster.costoMensualEstimado / d.costoMes;
+        score -= ratioCosto * 30; // Max -30 puntos
+
+        return Math.max(10, score.toFixed(0)); // Mínimo 10 puntos
+    }
+
+    function renderizarScoringAparatos() {
+        const d = analyzedData;
+        const tbody = document.querySelector('#scoringTable tbody');
+        tbody.innerHTML = ''; // Limpiar tabla
+
+        d.clusters.forEach(cluster => {
+            const score = calcularScoreAparato(cluster);
+            const scoreColor = score > 80 ? 'alert-success' : score > 60 ? 'alert-info' : score > 40 ? 'alert-warning' : 'alert-danger';
+
+            const row = `
+                <tr>
+                    <td>${cluster.tipo.tipo}</td>
+                    <td>${cluster.potenciaPromedio.toFixed(0)} W</td>
+                    <td>${cluster.frecuencia} veces</td>
+                    <td>$${cluster.costoMensualEstimado.toFixed(2)}</td>
+                    <td><span class="alert-badge ${scoreColor}">${score}/100</span></td>
+                </tr>
+            `;
+            tbody.innerHTML += row;
+        });
+    }
+
+    function generarAlertasInteligentes() {
+    const d = analyzedData;
+    const container = document.getElementById('alertasInteligentesContainer');
+    let alertasHTML = '';
+
+    // 1. Alerta de pico reciente
+    const ahora = new Date();
+    const picosRecientes = d.picos.filter(p => (ahora - p.time) / (1000 * 60 * 60) <= 2);
+    if (picosRecientes.length > 0) {
+        const picoMasAltoReciente = picosRecientes.reduce((max, p) => p.diff > max.diff ? p : max);
+        alertasHTML += `
+            <div class="insight-item">
+                <div class="insight-title"><span class="alert-badge alert-warning">AVISO</span> Consumo Elevado Recientemente</div>
+                <div class="insight-description">
+                    Hace menos de 2 horas se detectó un pico de <strong>${picoMasAltoReciente.diff.toFixed(0)} W</strong>, causado por un <strong>${picoMasAltoReciente.clasificacion.tipo}</strong>.
+                    Tu consumo en ese momento fue un <strong>${((picoMasAltoReciente.power / d.consumoPromedio - 1) * 100).toFixed(0)}%</strong> superior a tu promedio.
+                </div>
+            </div>`;
+    }
+
+    // 2. Alerta de aumento de consumo base
+    const mitad = Math.floor(d.datosLimpios.length / 2);
+    const primeraMitad = d.datosLimpios.slice(0, mitad);
+    const segundaMitad = d.datosLimpios.slice(mitad);
+    const consumoBasePrimera = primeraMitad.map(dato => dato.power).sort((a,b)=>a-b)[Math.floor(primeraMitad.length * 0.1)];
+    const consumoBaseSegunda = segundaMitad.map(dato => dato.power).sort((a,b)=>a-b)[Math.floor(segundaMitad.length * 0.1)];
+
+    if (consumoBaseSegunda > consumoBasePrimera * 1.2) {
+         alertasHTML += `
+            <div class="insight-item">
+                <div class="insight-title"><span class="alert-badge alert-danger">ALERTA</span> Posible Fuga Detectada</div>
+                <div class="insight-description">
+                    Tu consumo base (fantasma) ha aumentado de <strong>${consumoBasePrimera.toFixed(0)} W</strong> a <strong>${consumoBaseSegunda.toFixed(0)} W</strong> durante el periodo analizado.
+                    Esto sugiere un nuevo aparato conectado permanentemente o una posible fuga eléctrica.
+                </div>
+            </div>`;
+    }
+
+    // 3. Alerta de presupuesto
+    if (d.costoProyectado30d > d.presupuestoMensual) {
+        alertasHTML += `
+            <div class="insight-item">
+                <div class="insight-title"><span class="alert-badge alert-danger">ALERTA</span> Vas a Rebasar tu Presupuesto Mensual</div>
+                <div class="insight-description">
+                    Si tu consumo sigue la tendencia actual, tu próximo recibo será de aproximadamente <strong>$${d.costoProyectado30d.toFixed(2)} MXN</strong>,
+                    superando tu presupuesto de <strong>$${d.presupuestoMensual.toFixed(2)} MXN</strong>.
+                </div>
+                <div class="insight-recommendation">💡 Revisa la pestaña de "Recomendaciones" para encontrar formas de reducir tu consumo.</div>
+            </div>`;
+    }
+
+    // Alerta predictiva
+    alertasHTML += `
+        <div class="insight-item">
+            <div class="insight-title"><span class="alert-badge alert-info">PREDICCIÓN</span> Proyección de Recibo</div>
+            <div class="insight-description">
+                Si mantienes tus hábitos de consumo actuales, tu próximo recibo de luz será de aproximadamente <strong>$${d.costoProyectado30d.toFixed(2)} MXN</strong>.
+            </div>
+        </div>`;
+
+
+    if (alertasHTML === '') {
+        alertasHTML = '<p>No se han generado nuevas alertas. ¡Buen trabajo manteniendo tu consumo bajo control!</p>';
+    }
+
+    container.innerHTML = alertasHTML;
+}
 
     function calcularACF(series, maxLag) {
         const n = series.length;
