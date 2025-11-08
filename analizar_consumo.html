@@ -358,6 +358,46 @@
                     <h3>🔌 Top 30 eventos de encendido detectados</h3>
                     <div id="appliancesList"></div>
                 </div>
+                <div id="specificApplianceAnalysis" class="insights-section" style="margin-top: 20px;">
+                    <h3>🔍 Análisis Específico por Aparato</h3>
+                    <div class="config-section" style="margin-top: 15px;">
+                        <div class="config-item">
+                            <label for="lifespanAppliance">Estimador de Vida Útil</label>
+                            <select id="lifespanAppliance" class="config-item">
+                                <!-- Options will be populated dynamically -->
+                            </select>
+                        </div>
+                        <div class="config-item">
+                            <label for="applianceAge">Edad del aparato (años)</label>
+                            <input type="number" id="applianceAge" value="5" min="1" class="config-item"/>
+                        </div>
+                        <button onclick="estimateApplianceWear()" style="padding: 10px; background: #3498db; color: white; border: none; border-radius: 8px; cursor: pointer;">
+                            Estimar Desgaste
+                        </button>
+                    </div>
+                    <div id="lifespanResult" class="insight-item" style="display:none; margin-top: 15px;"></div>
+
+                    <div class="config-section" style="margin-top: 15px;">
+                        <div class="config-item">
+                            <label for="replacementAppliance">Calculadora de Reemplazo</label>
+                            <select id="replacementAppliance" class="config-item">
+                                <!-- Options will be populated dynamically -->
+                            </select>
+                        </div>
+                        <div class="config-item">
+                            <label for="replacementType">Nuevo modelo</label>
+                            <select id="replacementType" class="config-item">
+                                <option value="inverter">Inverter (A+++)</option>
+                                <option value="led">LED (A++)</option>
+                                <option value="heater">Bomba de calor</option>
+                            </select>
+                        </div>
+                        <button onclick="calculateReplacementSavings()" style="padding: 10px; background: #27ae60; color: white; border: none; border-radius: 8px; cursor: pointer;">
+                            Calcular Ahorro
+                        </button>
+                    </div>
+                    <div id="replacementResult" class="insight-item" style="display:none; margin-top: 15px;"></div>
+                </div>
             </div>
 
             <div id="tab-comparativas" class="tab-content">
@@ -1025,17 +1065,113 @@
             `;
         }
 
+        function scoreApplianceEfficiency(cluster) {
+            const baseline = {
+                'Alto consumo': 2000,
+                'Medio consumo': 800,
+                'Bajo consumo': 150
+            };
+
+            const powerRatio = baseline[cluster.tipo.categoria] / cluster.potenciaPromedio;
+            let score = 5 * Math.min(1, powerRatio);
+
+            const powerFactor = cluster.picos.reduce((acc, pico) => acc + (analyzedData.datosLimpios.find(d => d.time === pico.time)?.powerFactor || 0.8), 0) / cluster.picos.length;
+            score += 3 * (powerFactor / 0.95);
+
+            const consistency = 1 - (cluster.potencias.reduce((acc, p) => acc + Math.abs(p - cluster.potenciaPromedio), 0) / cluster.potencias.length / cluster.potenciaPromedio);
+            score += 2 * consistency;
+
+            return Math.max(1, Math.min(10, score)).toFixed(1);
+        }
+
         function renderAppliancesList() {
             const d = analyzedData;
-            const html = d.picos.slice(0, 30).map((pico, i) => `
-                <div class="appliance-item" style="border-left-color: ${pico.clasificacion.color}">
-                    <div class="appliance-time">${i + 1}. ${pico.time.toLocaleString('es-MX')}</div>
-                    <div class="appliance-power">⚡ Pico de ${pico.diff.toFixed(0)} W (Total: ${pico.power.toFixed(0)} W)</div>
-                    <div class="appliance-type">${pico.clasificacion.tipo} - ${pico.clasificacion.categoria}</div>
+            const html = d.clusters.slice(0, 30).map((cluster, i) => `
+                <div class="appliance-item" style="border-left-color: ${cluster.tipo.color}">
+                    <div class="appliance-time">${i + 1}. ${cluster.picos[0].time.toLocaleString('es-MX')} (y ${cluster.frecuencia - 1} más)</div>
+                    <div class="appliance-power">
+                        ⚡ ${cluster.tipo.tipo} - ${cluster.potenciaPromedio.toFixed(0)} W
+                        <span class="alert-badge alert-info" style="margin-left: 10px;">Eficiencia: ${scoreApplianceEfficiency(cluster)}/10</span>
+                    </div>
+                    <div class="appliance-type">${cluster.tipo.categoria}</div>
                 </div>
             `).join('');
 
             document.getElementById('appliancesList').innerHTML = html || '<p>No se detectaron picos significativos</p>';
+            populateLifespanEstimator();
+        }
+
+        function populateLifespanEstimator() {
+            const select = document.getElementById('lifespanAppliance');
+            const options = analyzedData.clusters.map(cluster =>
+                `<option value="${cluster.id}">${cluster.tipo.tipo}</option>`
+            ).join('');
+            select.innerHTML = options;
+            populateReplacementCalculator();
+        }
+
+        function populateReplacementCalculator() {
+            const select = document.getElementById('replacementAppliance');
+            const options = analyzedData.clusters.map(cluster =>
+                `<option value="${cluster.id}">${cluster.tipo.tipo}</option>`
+            ).join('');
+            select.innerHTML = options;
+        }
+
+        function calculateReplacementSavings() {
+            const applianceId = parseInt(document.getElementById('replacementAppliance').value);
+            const replacementType = document.getElementById('replacementType').value;
+            const cluster = analyzedData.clusters.find(c => c.id === applianceId);
+
+            if (!cluster) return;
+
+            const efficiencyGains = {
+                'inverter': 0.4,
+                'led': 0.8,
+                'heater': 0.6
+            };
+
+            const savings = cluster.costoMensualEstimado * (efficiencyGains[replacementType] || 0);
+            const resultDiv = document.getElementById('replacementResult');
+
+            resultDiv.innerHTML = `
+                <div class="insight-title">Ahorro por Reemplazo</div>
+                <div class="insight-description">
+                    Si cambias tu <strong>${cluster.tipo.tipo}</strong> por un modelo <strong>${replacementType}</strong>, podrías ahorrar aproximadamente:
+                </div>
+                <div class="insight-recommendation" style="font-size: 1.5em; text-align: center; margin: 15px 0;">
+                    $${savings.toFixed(2)} MXN al mes
+                </div>
+            `;
+            resultDiv.style.display = 'block';
+        }
+
+        function estimateApplianceWear() {
+            const applianceId = parseInt(document.getElementById('lifespanAppliance').value);
+            const age = parseInt(document.getElementById('applianceAge').value);
+            const cluster = analyzedData.clusters.find(c => c.id === applianceId);
+
+            if (!cluster || !age) return;
+
+            const wearFactor = {
+                'Alto consumo': 0.05,
+                'Medio consumo': 0.03,
+                'Bajo consumo': 0.01
+            };
+
+            const consumptionIncrease = (age * wearFactor[cluster.tipo.categoria] * 100).toFixed(0);
+            const resultDiv = document.getElementById('lifespanResult');
+
+            resultDiv.innerHTML = `
+                <div class="insight-title">Estimación de Desgaste</div>
+                <div class="insight-description">
+                    Tu <strong>${cluster.tipo.tipo}</strong> de ${age} años podría estar consumiendo un <strong>${consumptionIncrease}% más</strong> que cuando era nuevo.
+                </div>
+                <div class="insight-recommendation">
+                    ${consumptionIncrease > 30 ? 'Considera reemplazarlo por un modelo más eficiente.' : 'El desgaste es moderado, pero monitorea su consumo.'}
+                </div>
+            `;
+            resultDiv.style.display = 'block';
         }
 
         function renderComparatives() {
