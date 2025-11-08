@@ -323,9 +323,14 @@
                 </div>
                 <div class="config-item">
                     <label>📊 Tarifa CFE</label>
-                    <select id="tarifaCFE">
-                        <option value="domestica">Doméstica</option>
-                        <option value="dac">DAC (Alto Consumo)</option>
+                    <select id="tarifaCFE" onchange="refrescarAnalisisDeCostos()">
+                        <option value="1">Tarifa 1 (Centro/Sur)</option>
+                        <option value="1A">Tarifa 1A (Calor moderado)</option>
+                        <option value="1B">Tarifa 1B (Calor medio)</option>
+                        <option value="1C">Tarifa 1C (Calor alto)</option>
+                        <option value="1D">Tarifa 1D (Calor muy alto)</option>
+                        <option value="1E">Tarifa 1E (Calor extremo)</option>
+                        <option value="1F">Tarifa 1F (Extremo + bajo cero)</option>
                     </select>
                 </div>
                 <div class="config-item">
@@ -644,6 +649,40 @@
         let chartInstances = {};
         let analyzedData = null;
         let events = JSON.parse(localStorage.getItem('events')) || [];
+        let signatureLibrary = JSON.parse(localStorage.getItem('signatureLibrary')) || [];
+
+        function guardarFirma(picoIndex, potencia) {
+            const input = document.getElementById(`label-${picoIndex}`);
+            const etiqueta = input.value.trim();
+            if (!etiqueta) {
+                alert('Por favor, introduce una etiqueta para el aparato.');
+                return;
+            }
+
+            // Añadir o actualizar la firma
+            signatureLibrary.push({ etiqueta, potencia });
+
+            // Eliminar duplicados, manteniendo el más reciente
+            signatureLibrary = signatureLibrary.filter((item, index, self) =>
+                index === self.findIndex((t) => (
+                    t.etiqueta === item.etiqueta
+                ))
+            );
+
+            localStorage.setItem('signatureLibrary', JSON.stringify(signatureLibrary));
+            alert(`Firma "${etiqueta}" guardada con ${potencia} W.`);
+            input.value = '';
+
+            // Re-clasificar y re-renderizar
+            refrescarClasificacionAparatos();
+        }
+
+        function refrescarClasificacionAparatos() {
+            analyzedData.picos.forEach(pico => {
+                pico.clasificacion = clasificarAparato(pico.diff);
+            });
+            renderAppliancesList();
+        }
 
         function estimateOccupancy(data) {
             const occupancy = [];
@@ -725,6 +764,17 @@
 
         function clasificarAparato(watts) {
             watts = Math.round(watts);
+
+            // 1. Buscar en la biblioteca de firmas del usuario
+            for (const firma of signatureLibrary) {
+                const diferencia = Math.abs(watts - firma.potencia);
+                const porcentajeDiferencia = (diferencia / firma.potencia) * 100;
+                if (porcentajeDiferencia <= 15) { // Tolerancia del 15%
+                    return { tipo: `[Usuario] ${firma.etiqueta}`, color: '#2ecc71', categoria: 'Personalizado' };
+                }
+            }
+
+            // 2. Si no hay coincidencia, usar las reglas generales
             if (watts > 2500) return { tipo: '🚿 Regadera eléctrica / HVAC', color: '#e74c3c', categoria: 'Alto consumo' };
             if (watts > 1500) return { tipo: '🍳 Horno / Parrilla inducción', color: '#e67e22', categoria: 'Alto consumo' };
             if (watts > 800) return { tipo: '📱 Microondas / Cafetera', color: '#f39c12', categoria: 'Medio consumo' };
@@ -778,8 +828,95 @@
             }
         }
 
+        const tarifasCFE = {
+            '1': {
+                limiteDAC: 250, // kWh/mes
+                precios: [ // [limite_kWh, precio]
+                    { limite: 75, precio: 0.98 },  // Básico
+                    { limite: 140, precio: 1.19 }, // Intermedio
+                    { limite: Infinity, precio: 3.52 } // Excedente
+                ]
+            },
+            '1A': {
+                limiteDAC: 300,
+                precios: [
+                    { limite: 100, precio: 0.88 },
+                    { limite: 200, precio: 1.08 },
+                    { limite: Infinity, precio: 3.21 }
+                ]
+            },
+            '1B': {
+                limiteDAC: 400,
+                precios: [
+                    { limite: 125, precio: 0.88 },
+                    { limite: 250, precio: 1.08 },
+                    { limite: Infinity, precio: 3.21 }
+                ]
+            },
+            '1C': {
+                limiteDAC: 850,
+                precios: [
+                    { limite: 150, precio: 0.88 },
+                    { limite: 300, precio: 1.08 },
+                    { limite: Infinity, precio: 3.21 }
+                ]
+            },
+            '1D': {
+                limiteDAC: 1000,
+                precios: [
+                    { limite: 175, precio: 0.88 },
+                    { limite: 400, precio: 1.08 },
+                    { limite: Infinity, precio: 3.21 }
+                ]
+            },
+            '1E': {
+                limiteDAC: 2000,
+                precios: [
+                    { limite: 300, precio: 0.88 },
+                    { limite: 600, precio: 1.08 },
+                    { limite: Infinity, precio: 3.21 }
+                ]
+            },
+            '1F': {
+                limiteDAC: 2500,
+                precios: [
+                    { limite: 300, precio: 0.88 },
+                    { limite: 1200, precio: 1.98 },
+                    { limite: Infinity, precio: 3.21 }
+                ]
+            },
+            'DAC': {
+                limiteDAC: Infinity,
+                precios: [
+                    { limite: Infinity, precio: 6.38 } // Precio único
+                ]
+            }
+        };
+
+        function calcularCostoCFE(consumoMensualKwh, tarifaKey) {
+            const tarifa = tarifasCFE[tarifaKey];
+            let esDAC = consumoMensualKwh > tarifa.limiteDAC;
+            const esquemaPrecios = esDAC ? tarifasCFE['DAC'].precios : tarifa.precios;
+
+            let costo = 0;
+            let consumoRestante = consumoMensualKwh;
+            let limiteAnterior = 0;
+
+            for (const nivel of esquemaPrecios) {
+                const consumoEnNivel = Math.min(consumoRestante, nivel.limite - limiteAnterior);
+                costo += consumoEnNivel * nivel.precio;
+                consumoRestante -= consumoEnNivel;
+                limiteAnterior = nivel.limite;
+
+                if (consumoRestante <= 0) break;
+            }
+
+            return { costo, esDAC };
+        }
+
+
         async function procesarDatos(data) {
-            const precioKwh = parseFloat(document.getElementById('precioKwh').value);
+            const precioKwh = parseFloat(document.getElementById('precioKwh').value); // Se mantiene como referencia
             const umbralPico = parseFloat(document.getElementById('umbralPico').value);
             const consumoBaseEsperado = parseFloat(document.getElementById('consumoBaseEsperado').value);
             const tarifaCFE = document.getElementById('tarifaCFE').value;
@@ -916,11 +1053,14 @@
 
             // Costos
             const diasDatos = (datosLimpios[datosLimpios.length - 1].time - datosLimpios[0].time) / (1000 * 60 * 60 * 24);
+            const tuConsumoMensual = (consumoPromedio * 24 * 30.5) / 1000;
             const kwhTotal = (consumoPromedio * 24 * diasDatos) / 1000;
-            const costoTotal = kwhTotal * precioKwh;
-            const costoMes = (consumoPromedio * 24 * 30.5) / 1000 * precioKwh;
-            const costoFantasmaMes = (consumoBase * 24 * 30.5) / 1000 * precioKwh;
-            const ahorroMensual = ((consumoBase - consumoBaseEsperado) * 24 * 30.5) / 1000 * precioKwh;
+
+            const { costo: costoMes, esDAC: esTarifaDAC } = calcularCostoCFE(tuConsumoMensual, tarifaCFE);
+            const costoTotal = (costoMes / 30.5) * diasDatos;
+            const costoFantasmaMes = (consumoBase / consumoPromedio) * costoMes;
+            const ahorroMensualPotencial = ((consumoBase - consumoBaseEsperado) / consumoPromedio) * costoMes;
+
 
             // Proyecciones
             const tendencia = calcularTendencia(datosLimpios);
@@ -977,7 +1117,6 @@
 
             // Benchmarking (datos aproximados de México)
             const promedioNacionalMensual = 300; // kWh
-            const tuConsumoMensual = (consumoPromedio * 24 * 30.5) / 1000;
             const comparativoNacional = ((tuConsumoMensual - promedioNacionalMensual) / promedioNacionalMensual) * 100;
 
             analyzedData = {
@@ -988,14 +1127,16 @@
                 promedioPorHora, desviacionPorHora,
                 promedioPorDia, diasSemana,
                 mapaCalorPromedio,
-                diasDatos, kwhTotal, costoTotal, costoMes,
-                costoFantasmaMes, ahorroMensual,
+                diasDatos, kwhTotal, costoTotal, costoMes, esTarifaDAC,
+                costoFantasmaMes, ahorroMensualPotencial,
                 tendencia, consumoProyectado30d, costoProyectado30d,
                 tuConsumoMensual, promedioNacionalMensual, comparativoNacional,
                 precioKwh, tarifaCFE, presupuestoMensual,
                 // Nuevos datos
                 factorCarga, rampas, usoSimultaneo, eficienciaHoraria
             };
+
+            refrescarAnalisisDeCostos(); // Call the new function to perform the initial render
 
             const componentes = calcularComponentesTemporales(datosLimpios);
             analyzedData.scoreEficiencia = calcularScoreEficiencia();
@@ -1011,6 +1152,19 @@
             const predicciones = predecirConsumo(analyzedData.datosLimpios);
             const clusters = clusterizarElectrodomesticos(analyzedData.picos);
             renderizarAnalisisPredictivo(anomalias, predicciones, clusters);
+        }
+
+        function refrescarAnalisisDeCostos() {
+            if (!analyzedData) return;
+
+            const tarifaCFE = document.getElementById('tarifaCFE').value;
+            const { costo: costoMes, esDAC: esTarifaDAC } = calcularCostoCFE(analyzedData.tuConsumoMensual, tarifaCFE);
+
+            analyzedData.costoMes = costoMes;
+            analyzedData.esTarifaDAC = esTarifaDAC;
+            analyzedData.tarifaCFE = tarifaCFE;
+
+            renderMetricsGrid();
         }
 
         function detectarAnomalias(datos, umbral = 3) {
@@ -1177,11 +1331,11 @@
 
                 <div class="metric-card">
                     <div class="metric-icon">💰</div>
-                    <div class="metric-label">Costo Mensual</div>
+                    <div class="metric-label">Costo Mensual (Simulado)</div>
                     <div class="metric-value">$${d.costoMes.toFixed(2)}</div>
                     <div class="metric-detail">
-                        ${d.diasDatos.toFixed(1)} días: $${d.costoTotal.toFixed(2)}<br>
                         ${d.tuConsumoMensual.toFixed(0)} kWh/mes
+                        ${d.esTarifaDAC ? '<br><span class="alert-badge alert-danger">⚠️ TARIFA DAC</span>' : '<br><span class="alert-badge alert-success">✓ Tarifa Subsidiada</span>'}
                     </div>
                 </div>
 
@@ -1242,7 +1396,7 @@
                     icon: '🌙',
                     title: 'Consumo fantasma crítico detectado',
                     description: `Tu hogar consume ${d.consumoBase.toFixed(0)}W cuando "no usas nada". Esto representa el ${((d.consumoBase/d.consumoPromedio)*100).toFixed(1)}% de tu consumo promedio y te cuesta ${d.costoFantasmaMes.toFixed(2)} MXN al mes.`,
-                    recommendation: `💡 Recomendación: Desconecta cargadores, apaga regletas, considera smart plugs. Ahorro potencial: ${d.ahorroMensual.toFixed(2)} MXN/mes`
+                    recommendation: `💡 Recomendación: Desconecta cargadores, apaga regletas, considera smart plugs. Ahorro potencial: ${d.ahorroMensualPotencial.toFixed(2)} MXN/mes`
                 });
             }
 
@@ -1586,7 +1740,11 @@
                 <div class="appliance-item" style="border-left-color: ${pico.clasificacion.color}">
                     <div class="appliance-time">${i + 1}. ${pico.time.toLocaleString('es-MX')}</div>
                     <div class="appliance-power">⚡ Pico de ${pico.diff.toFixed(0)} W (Total: ${pico.power.toFixed(0)} W)</div>
-                    <div class="appliance-type">${pico.clasificacion.tipo} - ${pico.clasificacion.categoria}</div>
+                    <div class="appliance-type">Estimación: <strong>${pico.clasificacion.tipo}</strong></div>
+                    <div class="config-item" style="margin-top: 10px; display: flex; gap: 10px;">
+                        <input type="text" id="label-${i}" placeholder="Etiqueta personalizada (ej. Cafetera)" style="flex-grow: 1;">
+                        <button onclick="guardarFirma(${i}, ${pico.diff.toFixed(0)})" style="padding: 8px 12px; background: #2ecc71; color: white; border: none; border-radius: 5px;">Guardar Firma</button>
+                    </div>
                 </div>
             `).join('');
 
