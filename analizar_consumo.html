@@ -319,7 +319,10 @@
                 <div class="tab" onclick="switchTab('electrodomesticos')">🔌 Electrodomésticos</div>
                 <div class="tab" onclick="switchTab('comparativas')">📊 Comparativas</div>
                 <div class="tab" onclick="switchTab('predicciones')">🔮 Predicciones</div>
+                <div class="tab" onclick="switchTab('analisisPredictivo')">🔎 Análisis Predictivo</div>
                 <div class="tab" onclick="switchTab('causal')">🔗 Análisis Causal</div>
+                <div class="tab" onclick="switchTab('ocupacion')">🏠 Ocupación</div>
+                <div class="tab" onclick="switchTab('impacto')">🌍 Impacto Ambiental</div>
 
             </div>
 
@@ -400,6 +403,12 @@
                 </div>
             </div>
 
+            <div id="tab-analisisPredictivo" class="tab-content">
+                <div class="insights-section" id="predictiveAnalysis">
+                    <h3>🔎 Análisis Predictivo Avanzado</h3>
+                </div>
+            </div>
+
             <div id="tab-causal" class="tab-content">
                 <div class="insights-section">
                     <h3>🔗 Modelo Causal de Consumo</h3>
@@ -410,6 +419,25 @@
                     <canvas id="causalChart"></canvas>
                 </div>
                 <div class="metrics-grid" id="causalMetrics"></div>
+            </div>
+
+            <div id="tab-ocupacion" class="tab-content">
+                <div class="metrics-grid" id="occupancyMetrics"></div>
+                <div class="chart-container">
+                    <h3>🗓️ Horas de Ocupación Estimada por Día</h3>
+                    <canvas id="occupancyChart"></canvas>
+                </div>
+                <div class="insight-item">
+                    <p>Este análisis estima la presencia de personas en el hogar basándose en cambios abruptos de consumo. No es 100% preciso, pero ayuda a entender patrones de vida.</p>
+                </div>
+            </div>
+
+            <div id="tab-impacto" class="tab-content">
+                <div class="metrics-grid" id="environmentalMetrics"></div>
+                <div class="chart-container">
+                    <h3>Comparativa de Huella de Carbono</h3>
+                    <canvas id="carbonFootprintChart"></canvas>
+                </div>
             </div>
 
                 </div>
@@ -723,6 +751,19 @@
             renderizarAnalisisPredictivo(anomalias, predicciones, clusters);
         }
 
+        function detectarAnomalias(datos, umbral = 3) {
+            const potencias = datos.map(d => d.power);
+            const promedio = potencias.reduce((a, b) => a + b, 0) / potencias.length;
+            const desviacionEstandar = Math.sqrt(
+                potencias.map(p => Math.pow(p - promedio, 2)).reduce((a, b) => a + b, 0) / potencias.length
+            );
+
+            return datos.filter(d => {
+                const zScore = (d.power - promedio) / desviacionEstandar;
+                return Math.abs(zScore) > umbral;
+            });
+        }
+
         function calcularTendencia(datos) {
             const n = Math.min(datos.length, 1000);
             let sumX = 0, sumY = 0, sumXY = 0, sumX2 = 0;
@@ -758,6 +799,7 @@
             renderCausalAnalysis();
             renderOccupancyMetrics();
             renderOccupancyChart();
+            renderEnvironmentalImpact();
             document.getElementById('insightsList').innerHTML += generarDiagnosticoNLP();
         }
 
@@ -1715,6 +1757,138 @@ function simularOptimizacion() {
     }
 }
 // Generador de reportes PDF (simulado)
+function renderOccupancyMetrics() {
+    const d = analyzedData;
+    const totalHours = d.occupancy.length;
+    const occupiedHours = d.occupancy.filter(o => o.occupied).length;
+    const occupancyRate = (occupiedHours / totalHours) * 100;
+
+    const activeHours = d.occupancy.map(o => new Date(o.time).getHours());
+    const mostActiveHour = activeHours.reduce((acc, h) => {
+        acc[h] = (acc[h] || 0) + 1;
+        return acc;
+    }, {});
+    const peakHour = Object.keys(mostActiveHour).reduce((a, b) => mostActiveHour[a] > mostActiveHour[b] ? a : b);
+
+    document.getElementById('occupancyMetrics').innerHTML = `
+        <div class="metric-card">
+            <div class="metric-icon">🏠</div>
+            <div class="metric-label">Tasa de Ocupación</div>
+            <div class="metric-value">${occupancyRate.toFixed(1)}%</div>
+            <div class="metric-detail">
+                ${occupiedHours} de ${totalHours} horas con actividad detectada.
+            </div>
+        </div>
+        <div class="metric-card">
+            <div class="metric-icon">🕒</div>
+            <div class="metric-label">Hora de Mayor Actividad</div>
+            <div class="metric-value">${peakHour}:00 - ${parseInt(peakHour)+1}:00</div>
+            <div class="metric-detail">
+                Hora con la mayor frecuencia de cambios de consumo.
+            </div>
+        </div>
+    `;
+}
+
+function renderOccupancyChart() {
+    const d = analyzedData;
+    const ctx = document.getElementById('occupancyChart').getContext('2d');
+    if (chartInstances.occupancy) chartInstances.occupancy.destroy();
+
+    const hours = Array.from({length: 24}, () => 0);
+    d.occupancy.forEach(o => {
+        if (o.occupied) {
+            hours[new Date(o.time).getHours()]++;
+        }
+    });
+
+    chartInstances.occupancy = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: Array.from({length: 24}, (_, i) => `${i}:00`),
+            datasets: [{
+                label: 'Frecuencia de Ocupación',
+                data: hours,
+                backgroundColor: '#667eea'
+            }]
+        },
+        options: {
+            responsive: true,
+            plugins: { legend: { display: false } },
+            scales: {
+                y: { title: { display: true, text: 'Eventos de Actividad' } }
+            }
+        }
+    });
+}
+
+function renderEnvironmentalImpact() {
+    const d = analyzedData;
+    const co2Factor = 0.444; // kg CO2 / kWh in Mexico
+    const treeSequestration = 22; // kg CO2 per year per tree
+    const solarSystemCost = 75000; // MXN for a 3kW system
+
+    const monthlyKwh = d.tuConsumoMensual;
+    const annualKwh = monthlyKwh * 12;
+    const annualCo2 = annualKwh * co2Factor;
+    const treesNeeded = annualCo2 / treeSequestration;
+
+    // Solar panel calculations
+    const solarProductionKwh = 3 * 5 * 365; // 3kW system, 5 hours sun, 365 days
+    const annualSavings = Math.min(annualKwh, solarProductionKwh) * d.precioKwh;
+    const roiYears = solarSystemCost / annualSavings;
+
+    document.getElementById('environmentalMetrics').innerHTML = `
+        <div class="metric-card">
+            <div class="metric-icon">🌍</div>
+            <div class="metric-label">Huella de Carbono Anual</div>
+            <div class="metric-value">${annualCo2.toFixed(0)} kg CO₂</div>
+            <div class="metric-detail">
+                Equivale a las emisiones de un auto por ${(annualCo2 / 1.6).toFixed(0)} km.
+            </div>
+        </div>
+        <div class="metric-card">
+            <div class="metric-icon">🌳</div>
+            <div class="metric-label">Árboles para Compensar</div>
+            <div class="metric-value">${treesNeeded.toFixed(1)}</div>
+            <div class="metric-detail">
+                Cantidad de árboles maduros necesarios para secuestrar tu CO₂ anual.
+            </div>
+        </div>
+        <div class="metric-card">
+            <div class="metric-icon">☀️</div>
+            <div class="metric-label">ROI Paneles Solares</div>
+            <div class="metric-value">${roiYears.toFixed(1)} años</div>
+            <div class="metric-detail">
+                Ahorro anual estimado: $${annualSavings.toFixed(2)} MXN
+            </div>
+        </div>
+    `;
+
+    const ctx = document.getElementById('carbonFootprintChart').getContext('2d');
+    if(chartInstances.carbon) chartInstances.carbon.destroy();
+    chartInstances.carbon = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: ['Tu Hogar', 'Hogar Promedio MX', 'Con Paneles Solares'],
+            datasets: [{
+                label: 'Huella de Carbono (kg CO₂/año)',
+                data: [
+                    annualCo2,
+                    d.promedioNacionalMensual * 12 * co2Factor,
+                    Math.max(0, annualCo2 - solarProductionKwh * co2Factor)
+                ],
+                backgroundColor: ['#e74c3c', '#95a5a6', '#2ecc71']
+            }]
+        },
+        options: {
+            responsive: true,
+            plugins: { legend: { display: false } },
+            scales: { y: { title: { display: true, text: 'kg CO₂ por Año' } } }
+        }
+    });
+}
+
 function generarReporteEjecutivo() {
     const d = analyzedData;
 
@@ -1745,58 +1919,77 @@ function generarReporteEjecutivo() {
 
     function renderizarAnalisisPredictivo(anomalias, predicciones, clusters) {
         const container = document.getElementById('predictiveAnalysis');
-        let html = '<h4>Detección de Anomalías (Z-score & IQR)</h4>';
-        if (anomalias.length > 0) {
-            html += '<p>Se detectaron los siguientes consumos anómalos:</p>';
+        if (!container) return; // Exit if the container doesn't exist
+
+        let html = '<h3>🔎 Análisis Predictivo Avanzado</h3>';
+
+        html += '<h4>Detección de Anomalías (Z-score)</h4>';
+        if (anomalias && anomalias.length > 0) {
+            html += '<p>Se detectaron los siguientes consumos anormales significativamente diferentes del promedio:</p>';
             html += '<ul class="insights-list">';
-            anomalias.forEach(a => {
+            anomalias.slice(0, 5).forEach(a => { // Show top 5
                 html += `<li class="insight-item">
-                    <strong>Fecha:</strong> ${a.time.toLocaleString()} <br>
-                    <strong>Consumo:</strong> ${a.power.toFixed(2)} W
+                    <strong>Fecha:</strong> ${a.time.toLocaleString('es-MX')} <br>
+                    <strong>Consumo:</strong> ${a.power.toFixed(0)} W (Desviación: ${((a.power - analyzedData.consumoPromedio) / analyzedData.desviacionEstandar).toFixed(1)}σ)
                 </li>`;
             });
             html += '</ul>';
         } else {
-            html += '<p>No se detectaron anomalías significativas en el consumo.</p>';
+            html += '<p>✓ No se detectaron anomalías significativas. Tu consumo es estable.</p>';
         }
 
-        html += '<h4>Forecasting con Modelos ARIMA (Simulado)</h4>';
-        html += '<p>Predicción de consumo para los próximos 30 días:</p>';
-        html += '<canvas id="predictionChartAdvanced"></canvas>';
+        html += '<hr style="margin: 20px 0;">';
+        html += '<h4>Forecasting (Modelo de Descomposición Estacional)</h4>';
+        html += '<p>Predicción del consumo promedio diario para los próximos 30 días:</p>';
+        html += '<div class="chart-container"><canvas id="predictionChartAdvanced"></canvas></div>';
 
+        html += '<hr style="margin: 20px 0;">';
         html += '<h4>Clustering de Electrodomésticos (K-means)</h4>';
-        if (clusters.length > 0) {
-            html += '<p>Se han identificado los siguientes grupos de consumo:</p>';
+        if (clusters && clusters.length > 0 && clusters.some(c => c.length > 0)) {
+            html += '<p>Se han identificado los siguientes grupos de aparatos según su patrón de encendido:</p>';
             clusters.forEach((cluster, i) => {
-                const consumoPromedio = cluster.reduce((sum, p) => sum + p.diff, 0) / cluster.length;
-                html += `<div class="insight-item">
-                    <strong>Cluster ${i + 1}:</strong> ${cluster.length} eventos <br>
-                    <strong>Consumo Promedio:</strong> ${consumoPromedio.toFixed(2)} W
-                </div>`;
+                if (cluster.length > 0) {
+                    const consumoPromedio = cluster.reduce((sum, p) => sum + p.diff, 0) / cluster.length;
+                    const clasificacion = clasificarAparato(consumoPromedio);
+                    html += `<div class="insight-item" style="border-left-color: ${clasificacion.color}">
+                        <strong>Cluster ${i + 1} (${clasificacion.tipo}):</strong> ${cluster.length} eventos <br>
+                        <strong>Potencia Promedio:</strong> ${consumoPromedio.toFixed(0)} W
+                    </div>`;
+                }
             });
         } else {
-            html += '<p>No hay suficientes datos para realizar el clustering.</p>';
+            html += '<p>No hay suficientes datos para agrupar los electrodomésticos.</p>';
         }
 
         container.innerHTML = html;
 
+        // Render chart after innerHTML is set
         const ctx = document.getElementById('predictionChartAdvanced').getContext('2d');
-        new Chart(ctx, {
+        if(chartInstances.predictionAdvanced) chartInstances.predictionAdvanced.destroy();
+
+        chartInstances.predictionAdvanced = new Chart(ctx, {
             type: 'line',
             data: {
                 labels: Array.from({length: 30}, (_, i) => `Día ${i + 1}`),
                 datasets: [{
                     label: 'Consumo Predicho (W)',
                     data: predicciones,
-                    borderColor: '#667eea',
-                    backgroundColor: 'rgba(102, 126, 234, 0.1)',
+                    borderColor: '#764ba2',
+                    backgroundColor: 'rgba(118, 75, 162, 0.1)',
                     fill: true,
+                    tension: 0.3
                 }]
             },
             options: {
                 responsive: true,
+                plugins: {
+                    legend: { display: false }
+                },
                 scales: {
-                    y: { beginAtZero: false }
+                    y: {
+                        beginAtZero: false,
+                        title: { display: true, text: 'Consumo Promedio (W)' }
+                    }
                 }
             }
         });
